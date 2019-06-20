@@ -68,13 +68,13 @@ public class PubsubSourceTask extends SourceTask {
 
    private Subscriber newSubscriber() {
 
-      Subscriber subscriber = Subscriber.newBuilder(config.getProjectSubscription(), this::onPubsubMessageReceived)
+      Subscriber newSubscriber = Subscriber.newBuilder(config.getProjectSubscription(), this::onPubsubMessageReceived)
           .setFlowControlSettings(config.getFlowControlSettings())
           .build();
 
-      subscriber.addListener(new LoggingSubscriberListener(), Executors.newSingleThreadExecutor());
+      newSubscriber.addListener(new LoggingSubscriberListener(), Executors.newSingleThreadExecutor());
 
-      return subscriber;
+      return newSubscriber;
    }
 
    PubsubSourceTask subscribe(Subscriber subscriber) {

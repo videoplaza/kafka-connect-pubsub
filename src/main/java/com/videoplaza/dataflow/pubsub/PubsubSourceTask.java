@@ -66,25 +66,14 @@ public class PubsubSourceTask extends SourceTask {
       return this;
    }
 
-   Subscriber newSubscriber() {
+   private Subscriber newSubscriber() {
 
       Subscriber subscriber = Subscriber.newBuilder(config.getProjectSubscription(), this::onPubsubMessageReceived)
           .setFlowControlSettings(config.getFlowControlSettings())
           .build();
 
-      subscriber.addListener(new Subscriber.Listener() {
-         public void failed(Subscriber.State from, Throwable failure) {
-            log.error("Failed {}.", from, failure);
-         }
+      subscriber.addListener(new LoggingSubscriberListener(), Executors.newSingleThreadExecutor());
 
-         @Override public void stopping(ApiService.State from) {
-            log.info("Stopping at {}. {}", from, metrics());
-         }
-
-         @Override public void terminated(ApiService.State from) {
-            log.info("Terminated at {}. {}", from, metrics());
-         }
-      }, Executors.newSingleThreadExecutor());
       return subscriber;
    }
 
@@ -146,7 +135,7 @@ public class PubsubSourceTask extends SourceTask {
    /**
     * Waits for new messages to minimize CPU consumption.
     */
-   long waitForMessagesToPoll() {
+   private long waitForMessagesToPoll() {
       long start = System.nanoTime();
       receiveLock.lock();
       try {
@@ -160,7 +149,7 @@ public class PubsubSourceTask extends SourceTask {
       return msSince(start);
    }
 
-   List<SourceRecord> doPoll() {
+   private List<SourceRecord> doPoll() {
       return new HashSet<>(toBePolled).stream().map(this::convertAndPoll).collect(toList());
    }
 
@@ -253,7 +242,7 @@ public class PubsubSourceTask extends SourceTask {
       commitRecord(record, true);
    }
 
-   void commitRecord(SourceRecord record, boolean ack) {
+   private void commitRecord(SourceRecord record, boolean ack) {
       String messageId = (String) record.sourceOffset().get(config.getSubscription());
       MessageInFlight m = messages.get(messageId);
       if (m != null) {
@@ -314,5 +303,18 @@ public class PubsubSourceTask extends SourceTask {
       }
    }
 
+   class LoggingSubscriberListener extends Subscriber.Listener {
+      @Override public void failed(Subscriber.State from, Throwable failure) {
+         log.error("Failed {}.", from, failure);
+      }
+
+      @Override public void stopping(ApiService.State from) {
+         log.info("Stopping at {}. {}", from, metrics());
+      }
+
+      @Override public void terminated(ApiService.State from) {
+         log.info("Terminated at {}. {}", from, metrics());
+      }
+   }
 
 }

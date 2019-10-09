@@ -6,9 +6,11 @@ import com.google.pubsub.v1.ProjectSubscriptionName;
 import org.apache.kafka.common.config.AbstractConfig;
 import org.apache.kafka.common.config.ConfigDef;
 import org.apache.kafka.common.config.ConfigDef.Importance;
+import org.threeten.bp.Duration;
 
 import java.util.Map;
 
+import static org.apache.kafka.common.config.ConfigDef.Type.INT;
 import static org.apache.kafka.common.config.ConfigDef.Type.LONG;
 import static org.apache.kafka.common.config.ConfigDef.Type.STRING;
 
@@ -30,10 +32,16 @@ public class PubsubSourceConnectorConfig extends AbstractConfig {
    private static final String GCPS_TIMESTAMP_ATTRIBUTE_DOC = "The Cloud Pub/Sub message attribute to use as a timestamp for messages published to Kafka.";
    private static final String GCPS_TIMESTAMP_ATTRIBUTE_DEFAULT = "";
 
+   /**
+    * See {@link FlowControlSettings.Builder#getMaxOutstandingElementCount()}
+    */
    public static final String GCPS_MAX_OUTSTANDING_ELEMENTS_CONFIG = "flow.control.max.outstanding.elements";
    private static final String GCPS_MAX_OUTSTANDING_ELEMENTS_DOC = "Maximum number of outstanding pubsub messages to keep in memory before enforcing flow control. See https://cloud.google.com/pubsub/docs/pull#message-flow-control";
    private static final long GCPS_MAX_OUTSTANDING_ELEMENTS_DEFAULT = 1_000_000L;
 
+   /**
+    * See {@link FlowControlSettings.Builder#getMaxOutstandingRequestBytes()}
+    */
    public static final String GCPS_MAX_OUTSTANDING_BYTES_CONFIG = "flow.control.max.outstanding.bytes";
    private static final String GCPS_MAX_OUTSTANDING_BYTES_DOC = "Maximum number of outstanding bytes to keep in memory before enforcing flow control. See https://cloud.google.com/pubsub/docs/pull#message-flow-control";
    private static final long GCPS_MAX_OUTSTANDING_BYTES_DEFAULT = 1_000_000_000L;
@@ -45,6 +53,21 @@ public class PubsubSourceConnectorConfig extends AbstractConfig {
    public static final String POLL_TIMEOUT_MS_CONFIG = "poll.timeout.ms";
    private static final String POLL_TIMEOUT_MS_DOC = "Time in ms to wait for messages to be read from pubsub before returning from poll method.";
    private static final long POLL_TIMEOUT_MS_DEFAULT = 100;
+
+   /**
+    * See {@link com.google.cloud.pubsub.v1.Subscriber.Builder#setMaxAckExtensionPeriod(Duration)}
+    */
+   public static final String GCPS_MAX_ACK_EXTENSION_PERIOD_MS_CONFIG = "max.ack.extension.period.ms";
+   public static final String GCPS_MAX_ACK_EXTENSION_PERIOD_MS_DOC = "Set the maximum period a message ack deadline will be extended. Defaults to one hour. It is recommended to set this value to a reasonable upper bound of the subscriber time to process any message. A zero duration effectively disables auto deadline extensions. See https://googleapis.dev/java/google-cloud-clients/latest/com/google/cloud/pubsub/v1/Subscriber.Builder.html#setMaxAckExtensionPeriod-org.threeten.bp.Duration-";
+   private static final long GCPS_MAX_ACK_EXTENSION_PERIOD_MS_DEFAULT = 3_600_000L;
+
+
+   /**
+    * See {@link com.google.cloud.pubsub.v1.Subscriber.Builder#setParallelPullCount(int)}
+    */
+   public static final String GCPS_PARALLEL_PULL_COUNT_CONFIG = "parallel.pull.count";
+   public static final String GCPS_PARALLEL_PULL_COUNT_DOC = "Sets the number of pullers used to pull messages from the subscription. Defaults to one. See https://googleapis.dev/java/google-cloud-clients/latest/com/google/cloud/pubsub/v1/Subscriber.Builder.html#setParallelPullCount-int-";
+   private static final int GCPS_PARALLEL_PULL_COUNT_DEFAULT = 1;
 
    public static final ConfigDef CONFIG = configDef();
 
@@ -104,6 +127,18 @@ public class PubsubSourceConnectorConfig extends AbstractConfig {
           POLL_TIMEOUT_MS_DEFAULT,
           Importance.LOW,
           POLL_TIMEOUT_MS_DOC
+      ).define(
+          GCPS_MAX_ACK_EXTENSION_PERIOD_MS_CONFIG,
+          LONG,
+          GCPS_MAX_ACK_EXTENSION_PERIOD_MS_DEFAULT,
+          Importance.MEDIUM,
+          GCPS_MAX_ACK_EXTENSION_PERIOD_MS_DOC
+      ).define(
+          GCPS_PARALLEL_PULL_COUNT_CONFIG,
+          INT,
+          GCPS_PARALLEL_PULL_COUNT_DEFAULT,
+          Importance.LOW,
+          GCPS_PARALLEL_PULL_COUNT_DOC
       );
    }
 
@@ -154,4 +189,13 @@ public class PubsubSourceConnectorConfig extends AbstractConfig {
           .setLimitExceededBehavior(FlowController.LimitExceededBehavior.Block)
           .build();
    }
+
+   public Duration getMaxAckExtensionPeriod() {
+      return Duration.ofSeconds(getLong(GCPS_MAX_ACK_EXTENSION_PERIOD_MS_CONFIG));
+   }
+
+   public int getParallelPullCount() {
+      return getInt(GCPS_PARALLEL_PULL_COUNT_CONFIG);
+   }
+
 }

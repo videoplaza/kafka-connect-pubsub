@@ -67,9 +67,10 @@ public class PubsubSourceTask extends SourceTask {
    }
 
    private Subscriber newSubscriber() {
-
       Subscriber newSubscriber = Subscriber.newBuilder(config.getProjectSubscription(), this::onPubsubMessageReceived)
           .setFlowControlSettings(config.getFlowControlSettings())
+          .setMaxAckExtensionPeriod(config.getMaxAckExtensionPeriod())
+          .setParallelPullCount(config.getParallelPullCount())
           .build();
 
       newSubscriber.addListener(new LoggingSubscriberListener(), Executors.newSingleThreadExecutor());

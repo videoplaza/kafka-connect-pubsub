@@ -3,6 +3,9 @@ package com.videoplaza.dataflow.pubsub;
 import com.google.api.core.ApiService;
 import com.google.cloud.pubsub.v1.AckReplyConsumer;
 import com.google.cloud.pubsub.v1.Subscriber;
+import com.google.common.cache.Cache;
+import com.google.common.cache.CacheBuilder;
+import com.google.common.cache.RemovalNotification;
 import com.google.pubsub.v1.PubsubMessage;
 import org.apache.kafka.connect.source.SourceRecord;
 import org.apache.kafka.connect.source.SourceTask;
@@ -12,6 +15,7 @@ import org.slf4j.LoggerFactory;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
@@ -37,7 +41,7 @@ public class PubsubSourceTask extends SourceTask {
    private final Logger log = LoggerFactory.getLogger(PubsubSourceTask.class.getName() + "-" + id);
 
    private final TaskMetrics metrics = new TaskMetrics();
-   private final Map<String, MessageInFlight> messages = new ConcurrentHashMap<>();
+   private volatile Cache<String, MessageInFlight> messages;
    private final Set<PubsubMessage> toBePolled = ConcurrentHashMap.newKeySet();
 
    private final AtomicBoolean stopping = new AtomicBoolean();
@@ -50,6 +54,9 @@ public class PubsubSourceTask extends SourceTask {
    private volatile PubsubMessageConverter converter;
    private volatile Sleeper sleeper;
 
+   private final boolean debugLoggingEnabled = log.isDebugEnabled();
+   private volatile int debugLogSparsity = PubsubSourceConnectorConfig.DEBUG_LOG_SPARSITY_DEFAULT;
+
    @Override public String version() {
       return Version.getVersion();
    }
@@ -57,12 +64,23 @@ public class PubsubSourceTask extends SourceTask {
    @Override public void start(Map<String, String> props) {
       configure(props);
       configure(new SimpleSleeper());
+      configure(CacheBuilder.newBuilder()
+          .expireAfterWrite(config.getCacheExpirationDeadlineSeconds(), TimeUnit.SECONDS)
+          .removalListener(this::onMessageRemoval)
+          .build()
+      );
+      debugLogSparsity = config.getDebugLogSparsity();
       subscribe(newSubscriber());
       log.info("Started");
    }
 
    PubsubSourceTask configure(Sleeper sleeper) {
       this.sleeper = sleeper;
+      return this;
+   }
+
+   PubsubSourceTask configure(Cache<String, MessageInFlight> messages) {
+      this.messages = messages;
       return this;
    }
 
@@ -95,16 +113,22 @@ public class PubsubSourceTask extends SourceTask {
       return this;
    }
 
-   /**
-    * Attempts to discard some obvious duplicates.
-    * Does not guarantee duplicate detection if message has been already processed on this on other nodes.
-    */
+   private boolean isDebugEnabled(String messageId) {
+      return debugLoggingEnabled && messageId.hashCode() % debugLogSparsity == 0;
+   }
+
    void onPubsubMessageReceived(PubsubMessage pubsubMessage, AckReplyConsumer ackReplyConsumer) {
-      if (!messages.containsKey(pubsubMessage.getMessageId())) {
-         log.trace("Received {}", pubsubMessage.getMessageId());
+      MessageInFlight mif = messages.asMap().get(pubsubMessage.getMessageId());
+      if (mif == null) {
+         String messageKey = converter.getKey(pubsubMessage);
+
+         if (isDebugEnabled(pubsubMessage.getMessageId())) {
+            log.debug("Received {}/{}. {}", pubsubMessage.getMessageId(), messageKey, metrics());
+         }
+
          messages.put(
              pubsubMessage.getMessageId(),
-             new MessageInFlight(pubsubMessage.getMessageId(), ackReplyConsumer, metrics, log)
+             new MessageInFlight(pubsubMessage.getMessageId(), messageKey, ackReplyConsumer, metrics, log)
          );
          toBePolled.add(pubsubMessage);
          metrics.onReceived();
@@ -117,16 +141,22 @@ public class PubsubSourceTask extends SourceTask {
          }
       } else {
          metrics.onDuplicate();
-         log.info("A duplicate received: [{}/{}/{}]. {}", pubsubMessage.getMessageId(), converter.getKey(pubsubMessage), converter.getTimestamp(pubsubMessage), metrics());
+         if (isDebugEnabled(pubsubMessage.getMessageId())) {
+            log.warn("A duplicate for {} received: [{}/{}]. {}. Debug enabled.", mif, converter.getKey(pubsubMessage), converter.getTimestamp(pubsubMessage), metrics());
+         } else {
+            log.warn("A duplicate for {} received: [{}/{}]. {}", mif, converter.getKey(pubsubMessage), converter.getTimestamp(pubsubMessage), metrics());
+         }
+
       }
    }
 
    @Override public List<SourceRecord> poll() {
+      messages.cleanUp();
       long timeWaited = waitForMessagesToPoll();
       pollCommitLock.lock();
       try {
          List<SourceRecord> records = doPoll();
-         log.debug("Returning {} records after waiting for {}ms. {}", records.size(), timeWaited, metrics());
+         log.trace("Returning {} records after waiting for {}ms. {}", records.size(), timeWaited, metrics());
          return records.isEmpty() ? null : records;
       } finally {
          pollCommitLock.unlock();
@@ -151,13 +181,19 @@ public class PubsubSourceTask extends SourceTask {
    }
 
    private List<SourceRecord> doPoll() {
-      return new HashSet<>(toBePolled).stream().map(this::convertAndPoll).collect(toList());
+      return new HashSet<>(toBePolled).stream().map(this::convertAndPoll).filter(Objects::nonNull).collect(toList());
    }
 
    private SourceRecord convertAndPoll(PubsubMessage message) {
       toBePolled.remove(message);
-      messages.get(message.getMessageId()).markAsPolled();
-      return converter.convert(message);
+      MessageInFlight m = messages.getIfPresent(message.getMessageId());
+      if (m == null) {
+         log.warn("Message [{},{}] cannot be polled since it has already expired", message.getMessageId(), converter.getKey(message));
+         return null;
+      } else {
+         m.markAsPolled();
+         return converter.convert(message);
+      }
    }
 
    /**
@@ -228,9 +264,9 @@ public class PubsubSourceTask extends SourceTask {
 
    private boolean isClean() {
       return toBePolled.isEmpty() &&
-          messages.isEmpty() &&
+          messages.asMap().isEmpty() &&
           metrics.getCountersMismatch() == 0 &&
-          metrics.getLostCount() == 0;
+          metrics.getAckLostCount() == 0;
    }
 
    private void nackReceivedMessages() {
@@ -245,13 +281,20 @@ public class PubsubSourceTask extends SourceTask {
 
    private void commitRecord(SourceRecord record, boolean ack) {
       String messageId = (String) record.sourceOffset().get(config.getSubscription());
-      MessageInFlight m = messages.get(messageId);
+      MessageInFlight m = messages.getIfPresent(messageId);
       if (m != null) {
          m.ack(ack);
-         messages.remove(messageId);
+         if (isDebugEnabled(messageId)) {
+            log.debug("Acked {}. {}", m, metrics());
+         }
+         messages.asMap().remove(messageId);
       } else {
-         metrics.onLost();
-         log.error("Nothing to ack[{}] for {}. So far: {}", ack, record.key(), metrics.getLostCount());
+         metrics.onAckLost();
+         if (isDebugEnabled(messageId)) {
+            log.warn("Nothing to ack[{}] for {}/{}. So far: {}. Debug enabled.", ack, messageId, record.key(), metrics.getAckLostCount());
+         } else {
+            log.warn("Nothing to ack[{}] for {}/{}. So far: {}", ack, messageId, record.key(), metrics.getAckLostCount());
+         }
       }
    }
 
@@ -274,7 +317,7 @@ public class PubsubSourceTask extends SourceTask {
     * Number of messages being delivered to kafka and not yet acknowledged in Cloud Pubsub
     */
    public long getPolledCount() {
-      return messages.values().stream().filter(MessageInFlight::isPolled).count();
+      return messages.asMap().values().stream().filter(MessageInFlight::isPolled).count();
    }
 
    public TaskMetrics getMetrics() {
@@ -283,6 +326,15 @@ public class PubsubSourceTask extends SourceTask {
 
    private String metrics() {
       return metrics + " [" + getPolledCount() + "/" + getToBePolledCount() + "]";
+   }
+
+   void onMessageRemoval(RemovalNotification<String, MessageInFlight> removal) {
+      if (removal.wasEvicted()) {
+         metrics.onEvicted();
+         if (isDebugEnabled(removal.getKey())) {
+            log.debug("Evicted {}. {}", removal.getValue(), metrics());
+         }
+      }
    }
 
    /**
@@ -303,6 +355,7 @@ public class PubsubSourceTask extends SourceTask {
          }
       }
    }
+
 
    class LoggingSubscriberListener extends Subscriber.Listener {
       @Override public void failed(Subscriber.State from, Throwable failure) {

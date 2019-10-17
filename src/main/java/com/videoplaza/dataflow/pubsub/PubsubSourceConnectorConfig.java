@@ -59,7 +59,12 @@ public class PubsubSourceConnectorConfig extends AbstractConfig {
     */
    public static final String GCPS_MAX_ACK_EXTENSION_PERIOD_SEC_CONFIG = "max.ack.extension.period.sec";
    private static final String GCPS_MAX_ACK_EXTENSION_PERIOD_SEC_DOC = "Maximum period in seconds a message ack deadline will be extended. Defaults to one hour. It is recommended to set this value to a reasonable upper bound of the subscriber time to process any message. A zero duration effectively disables auto deadline extensions. See https://googleapis.dev/java/google-cloud-clients/latest/com/google/cloud/pubsub/v1/Subscriber.Builder.html#setMaxAckExtensionPeriod-org.threeten.bp.Duration-";
-   static final int GCPS_MAX_ACK_EXTENSION_PERIOD_SEC_DEFAULT = 3600;
+   static final long GCPS_MAX_ACK_EXTENSION_PERIOD_SEC_DEFAULT = 3600;
+
+
+   public static final String CACHE_EXPIRATION_DEADLINE_SEC_CONFIG = "cache.expiration.deadline.sec";
+   private static final String CACHE_EXPIRATION_DEADLINE_SEC_DOC = "Maximum period in seconds a message is kept in internal cache if not delivered to kafka. Messages with same ids are considered duplicates and discarded. This should be greater than `delivery.timeout.ms` setting for kafka producer and less than max ack deadline in Cloud Pub/Sub";
+   static final long CACHE_EXPIRATION_DEADLINE_SEC_DEFAULT = GCPS_MAX_ACK_EXTENSION_PERIOD_SEC_DEFAULT - 10;
 
    /**
     * See {@link com.google.cloud.pubsub.v1.Subscriber.Builder#setParallelPullCount(int)}
@@ -67,6 +72,11 @@ public class PubsubSourceConnectorConfig extends AbstractConfig {
    public static final String GCPS_PARALLEL_PULL_COUNT_CONFIG = "parallel.pull.count";
    private static final String GCPS_PARALLEL_PULL_COUNT_DOC = "Number of pullers used to pull messages from the subscription. Defaults to one. See https://googleapis.dev/java/google-cloud-clients/latest/com/google/cloud/pubsub/v1/Subscriber.Builder.html#setParallelPullCount-int-";
    static final int GCPS_PARALLEL_PULL_COUNT_DEFAULT = 1;
+
+   public static final String DEBUG_LOG_SPARSITY_CONFIG = "debug.log.sparsity";
+   private static final String DEBUG_LOG_SPARSITY_DOC = "Number of messages to skip per single log line. Does have any effect if debug logging is disabled";
+   static final int DEBUG_LOG_SPARSITY_DEFAULT = 1;
+
 
    public static final ConfigDef CONFIG = configDef();
 
@@ -138,6 +148,18 @@ public class PubsubSourceConnectorConfig extends AbstractConfig {
           GCPS_PARALLEL_PULL_COUNT_DEFAULT,
           Importance.LOW,
           GCPS_PARALLEL_PULL_COUNT_DOC
+      ).define(
+          CACHE_EXPIRATION_DEADLINE_SEC_CONFIG,
+          LONG,
+          CACHE_EXPIRATION_DEADLINE_SEC_DEFAULT,
+          Importance.MEDIUM,
+          CACHE_EXPIRATION_DEADLINE_SEC_DOC
+      ).define(
+          DEBUG_LOG_SPARSITY_CONFIG,
+          INT,
+          DEBUG_LOG_SPARSITY_DEFAULT,
+          Importance.LOW,
+          DEBUG_LOG_SPARSITY_DOC
       );
    }
 
@@ -191,6 +213,14 @@ public class PubsubSourceConnectorConfig extends AbstractConfig {
 
    public Duration getMaxAckExtensionPeriod() {
       return Duration.ofSeconds(getLong(GCPS_MAX_ACK_EXTENSION_PERIOD_SEC_CONFIG));
+   }
+
+   public long getCacheExpirationDeadlineSeconds() {
+      return getLong(CACHE_EXPIRATION_DEADLINE_SEC_CONFIG);
+   }
+
+   public int getDebugLogSparsity() {
+      return getInt(DEBUG_LOG_SPARSITY_CONFIG);
    }
 
    public int getParallelPullCount() {

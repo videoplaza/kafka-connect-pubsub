@@ -32,7 +32,6 @@ public class PubsubMessageConverter {
 
    private final String topic;
 
-
    //TODO make a builder
    public PubsubMessageConverter(String keyAttribute, String timestampAttribute, String subscription, String topic) {
       this.keyAttribute = keyAttribute;

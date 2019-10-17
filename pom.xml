@@ -3,7 +3,7 @@
     <modelVersion>4.0.0</modelVersion>
     <groupId>com.videoplaza</groupId>
     <artifactId>kafka-connect-pubsub</artifactId>
-    <version>0.13</version>
+    <version>0.13.16</version>
 
     <properties>
         <maven.compiler.source>11</maven.compiler.source>
@@ -11,7 +11,7 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
 
-        <google-cloud.version>0.96.0-alpha</google-cloud.version>
+        <google-cloud.version>0.114.0-alpha</google-cloud.version>
 
     </properties>
 
@@ -50,6 +50,10 @@
             <artifactId>mockito-core</artifactId>
             <version>2.27.0</version>
             <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.google.api</groupId>
+            <artifactId>api-common</artifactId>
         </dependency>
     </dependencies>
 

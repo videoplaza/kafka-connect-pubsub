@@ -3,6 +3,7 @@ package com.videoplaza.dataflow.pubsub;
 import com.google.api.core.ApiService;
 import com.google.cloud.pubsub.v1.AckReplyConsumer;
 import com.google.cloud.pubsub.v1.Subscriber;
+import com.google.common.cache.CacheBuilder;
 import com.google.protobuf.ByteString;
 import com.google.protobuf.Timestamp;
 import com.google.pubsub.v1.PubsubMessage;
@@ -42,6 +43,7 @@ public class PubsubSourceTaskTest {
            GCPS_SHUTDOWN_TIMEOUT_MS_CONFIG, "1000"
        ))
        .subscribe(subscriber)
+       .configure(CacheBuilder.newBuilder().expireAfterWrite(10, TimeUnit.SECONDS).build())
        .configure(sleeper);
 
    private final ExecutorService executor = Executors.newSingleThreadExecutor();
@@ -61,6 +63,12 @@ public class PubsubSourceTaskTest {
 
    }
 
+   @Test public void test() {
+      String id1 = "741967042247751";
+      String id2 = "741967042247751";
+      assertEquals(id1.hashCode(),id2.hashCode());
+
+   }
    @Test public void testPoll() {
       pubsubSourceTask.onPubsubMessageReceived(MESSAGE, ackSupplier);
       assertEquals(1, pubsubSourceTask.poll().size());

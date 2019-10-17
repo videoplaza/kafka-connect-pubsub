@@ -7,7 +7,8 @@ public class TaskMetrics {
    private final AtomicLong duplicates = new AtomicLong();
    private final AtomicLong acks = new AtomicLong();
    private final AtomicLong nacks = new AtomicLong();
-   private final AtomicLong lost = new AtomicLong();
+   private final AtomicLong ackLost = new AtomicLong();
+   private final AtomicLong evicted = new AtomicLong();
 
    /**
     * Total number of acknowledgments sent to Cloud Pubsub
@@ -31,8 +32,12 @@ public class TaskMetrics {
       return received.get();
    }
 
-   public long getLostCount() {
-      return lost.get();
+   public long getAckLostCount() {
+      return ackLost.get();
+   }
+
+   public long getEvictedCount() {
+      return evicted.get();
    }
 
    public long getDuplicatesCount() {
@@ -43,8 +48,8 @@ public class TaskMetrics {
       return received.get() - acks.get() - nacks.get();
    }
 
-   public void onLost() {
-      lost.incrementAndGet();
+   public void onAckLost() {
+      ackLost.incrementAndGet();
    }
 
    public void onAck() {
@@ -64,14 +69,18 @@ public class TaskMetrics {
    }
 
    @Override public String toString() {
-      return "TaskMetrics[" +
-          getReceivedCount() + "/" +
-          getAckCount() + "/" +
-          getNackCount() + "|" +
-          getDuplicatesCount() + "][" +
-          getCountersMismatch() + "/" +
-          getLostCount() + "]";
+      return "TaskMetrics[r:" +
+          getReceivedCount() + "/a:" +
+          getAckCount() + "/n:" +
+          getNackCount() + "|e:" +
+          getEvictedCount() + "|d:" +
+          getDuplicatesCount() + "][m:" +
+          getCountersMismatch() + "/l:" +
+          getAckLostCount() + "]";
    }
 
 
+   public void onEvicted() {
+      evicted.incrementAndGet();
+   }
 }

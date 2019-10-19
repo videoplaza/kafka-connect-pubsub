@@ -18,17 +18,22 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.stream.Collectors;
 
+import static com.google.common.collect.Iterables.partition;
 import static com.videoplaza.dataflow.pubsub.TimeUtils.msSince;
 import static com.videoplaza.dataflow.pubsub.TimeUtils.msTo;
+import static java.lang.String.join;
 import static java.util.stream.Collectors.toList;
+import static java.util.stream.StreamSupport.stream;
 
 /**
  * TODO report metrics
@@ -36,16 +41,17 @@ import static java.util.stream.Collectors.toList;
 public class PubsubSourceTask extends SourceTask {
 
    private static final AtomicInteger TASK_COUNT = new AtomicInteger();
+   private static final int DUMP_MESSAGE_IN_FLIGHT_BATCH_SIZE = 500;
 
    private final int id = TASK_COUNT.incrementAndGet();
-   private final Logger log = LoggerFactory.getLogger(PubsubSourceTask.class.getName() + "-" + id);
+   private final Logger log = LoggerFactory.getLogger(taskId());
 
    private final TaskMetrics metrics = new TaskMetrics();
    private volatile Cache<String, MessageInFlight> messages;
    private final Set<PubsubMessage> toBePolled = ConcurrentHashMap.newKeySet();
 
-   private final AtomicBoolean stopping = new AtomicBoolean();
-   private final Lock pollCommitLock = new ReentrantLock();
+   private final CountDownLatch state = new CountDownLatch(2);
+   private final Lock pollStopLock = new ReentrantLock();
    private final Lock receiveLock = new ReentrantLock();
    private final Condition recordsReceived = receiveLock.newCondition();
 
@@ -56,6 +62,10 @@ public class PubsubSourceTask extends SourceTask {
 
    private final boolean debugLoggingEnabled = log.isDebugEnabled();
    private volatile int debugLogSparsity = PubsubSourceConnectorConfig.DEBUG_LOG_SPARSITY_DEFAULT;
+
+   private String taskId() {
+      return PubsubSourceTask.class.getName() + "-" + id;
+   }
 
    @Override public String version() {
       return Version.getVersion();
@@ -113,53 +123,99 @@ public class PubsubSourceTask extends SourceTask {
       return this;
    }
 
-   private boolean isDebugEnabled(String messageId) {
-      return debugLoggingEnabled && messageId.hashCode() % debugLogSparsity == 0;
+   private boolean isDebugEnabled(String messageKey) {
+      return debugLoggingEnabled && messageKey.hashCode() % debugLogSparsity == 0;
    }
 
    void onPubsubMessageReceived(PubsubMessage pubsubMessage, AckReplyConsumer ackReplyConsumer) {
+      String messageKey = converter.getKey(pubsubMessage);
+
+      if (isStopped()) {
+         log.error("Received a message after shutdown {}/{}. {}", pubsubMessage.getMessageId(), messageKey, metrics());
+         subscriber.stopAsync();
+         return;
+      }
+
       MessageInFlight mif = messages.asMap().get(pubsubMessage.getMessageId());
-      if (mif == null) {
-         String messageKey = converter.getKey(pubsubMessage);
-
-         if (isDebugEnabled(pubsubMessage.getMessageId())) {
-            log.debug("Received {}/{}. {}", pubsubMessage.getMessageId(), messageKey, metrics());
-         }
-
-         messages.put(
-             pubsubMessage.getMessageId(),
-             new MessageInFlight(pubsubMessage.getMessageId(), messageKey, ackReplyConsumer, metrics, log)
-         );
-         toBePolled.add(pubsubMessage);
-         metrics.onReceived();
-
-         receiveLock.lock();
-         try {
-            recordsReceived.signalAll();
-         } finally {
-            receiveLock.unlock();
-         }
-      } else {
+      if (mif != null) {
          metrics.onDuplicate();
-         if (isDebugEnabled(pubsubMessage.getMessageId())) {
+         if (isDebugEnabled(messageKey)) {
             log.warn("A duplicate for {} received: [{}/{}]. {}. Debug enabled.", mif, converter.getKey(pubsubMessage), converter.getTimestamp(pubsubMessage), metrics());
          } else {
             log.warn("A duplicate for {} received: [{}/{}]. {}", mif, converter.getKey(pubsubMessage), converter.getTimestamp(pubsubMessage), metrics());
          }
+         return;
+      }
 
+      if (isStopping()) {
+         if (config.shouldNackMessagesDuringShutdown()) {
+            ackReplyConsumer.nack();
+            if (isDebugEnabled(messageKey)) {
+               log.debug("Received a message during shutdown. Nacking. {}/{}. {}", pubsubMessage.getMessageId(), messageKey, metrics());
+            }
+         }
+         if (isDebugEnabled(messageKey)) {
+            log.debug("Received a message during shutdown. Ignoring. {}/{}. {}", pubsubMessage.getMessageId(), messageKey, metrics());
+         }
+         return;
+      }
+
+      acceptMessage(pubsubMessage, ackReplyConsumer, messageKey);
+   }
+
+   private void acceptMessage(PubsubMessage pubsubMessage, AckReplyConsumer ackReplyConsumer, String messageKey) {
+      if (isDebugEnabled(messageKey)) {
+         log.debug("Received {}/{}. {}", pubsubMessage.getMessageId(), messageKey, metrics());
+      }
+
+      messages.put(
+          pubsubMessage.getMessageId(),
+          new MessageInFlight(pubsubMessage.getMessageId(), messageKey, ackReplyConsumer, metrics, log)
+      );
+
+      toBePolled.add(pubsubMessage);
+      metrics.onReceived();
+
+      receiveLock.lock();
+      try {
+         recordsReceived.signalAll();
+      } finally {
+         receiveLock.unlock();
       }
    }
 
    @Override public List<SourceRecord> poll() {
       messages.cleanUp();
       long timeWaited = waitForMessagesToPoll();
-      pollCommitLock.lock();
+      if (isStopping()) {
+         log.info("No poll during shutdown");
+         return null;
+      }
       try {
-         List<SourceRecord> records = doPoll();
-         log.trace("Returning {} records after waiting for {}ms. {}", records.size(), timeWaited, metrics());
-         return records.isEmpty() ? null : records;
-      } finally {
-         pollCommitLock.unlock();
+         if (pollStopLock.tryLock(config.gePollTimeoutMs(), TimeUnit.MILLISECONDS)) {
+            try {
+               List<SourceRecord> records = doPoll();
+               log.trace("Returning {} records after waiting for {}ms. {}", records.size(), timeWaited, metrics());
+               return records.isEmpty() ? null : records;
+            } finally {
+               pollStopLock.unlock();
+            }
+         } else {
+            log.info("Could not obtain lock in {}ms. Will try later.", config.gePollTimeoutMs());
+            return null;
+         }
+      } catch (InterruptedException e) {
+         log.info("Poll was interrupted");
+         Thread.currentThread().interrupt();
+         return null;
+      }
+   }
+
+   @Override public void commit() throws InterruptedException {
+      if (isStopping()) {
+         log.info("Waiting for async shutdown thread to complete. {}", metrics());
+         state.await(config.getTotalTerminationTimeoutMs(), TimeUnit.MILLISECONDS);
+         log.info("Task is shutdown: {}. {}", isStopped(), metrics());
       }
    }
 
@@ -196,68 +252,33 @@ public class PubsubSourceTask extends SourceTask {
       }
    }
 
-   /**
-    * Does nothing if task is not being stopped. Otherwise attempts the following:
-    * <ul>
-    * <li>Waits for all in flight messages to be delivered to kafka and acknowledge those in Cloud PubSub</li>
-    * <li>Waits for Cloud PubSub subscriber to shutdown and 'nacks' all messages that have been received but not delivered to kafka</li>
-    * </ul>
-    * <p>
-    * In any way the method will complete within approximately {@link PubsubSourceConnectorConfig#GCPS_SHUTDOWN_TIMEOUT_MS_CONFIG}.
-    */
-   @Override public void commit() {
-      pollCommitLock.lock();
-      try {
-         //Source offset committer is stopped before tasks stop method is invoked so this the final commit after all polling is done.
-         if (stopping.get()) {
-            log.info("Committing after stop request within {}ms. {}", config.getTerminationTimeoutMs(), metrics());
-            long start = System.nanoTime();
-            long deadline = start + TimeUnit.MILLISECONDS.toNanos(config.getTerminationTimeoutMs());
-
-            waitForPolledMessagesToBeAcknowledged(deadline);
-
-            terrminateSubscriber(deadline);
-
-            if (!isClean()) {
-               log.warn("Task ended up in unclean state after shutdown in {}ms. {}", msSince(start), metrics());
-            } else {
-               log.info("Task is shutdown in {}ms. {}", msSince(start), metrics());
-            }
-         }
-      } finally {
-         pollCommitLock.unlock();
-      }
-   }
-
-   private void waitForPolledMessagesToBeAcknowledged(long deadline) {
-      log.info("Waiting for {} inflight messages to be delivered to kafka. {}ms left. {}", getPolledCount(), msTo(deadline), metrics());
+   private void waitForPolledMessagesToBeAcknowledged() {
+      log.info("Waiting for {} inflight messages to be delivered to kafka. {}ms left. {}", getPolledCount(), config.getInflightAckTimeoutMs(), metrics());
       long start = System.nanoTime();
+      long deadline = start + TimeUnit.MILLISECONDS.toNanos(config.getInflightAckTimeoutMs());
       while (msTo(deadline) > 0 && getPolledCount() > 0) {
-         sleeper.sleep(10);
+         sleeper.sleep(100);
       }
       if (getPolledCount() == 0) {
          log.info("All messages delivered to kafka are acknowledged in {} ms. {}", msSince(start), metrics());
       } else {
          log.warn("Not all messages delivered to kafka are acknowledged in {} ms. {}", msSince(start), metrics());
+         dumpPolledMessages();
       }
    }
 
    /**
-    * Waits until <code>deadline</> to let grpc/netty to shutdown itself gracefully. Attempts to nack messages while waiting.
+    * Attempts to nack messages, terminates subscriber and aits at most  {@link PubsubSourceConnectorConfig#SHUTDOWN_TERMINATE_SUBSCRIBER_TIMEOUT_MS_CONFIG}.
     */
-   private void terrminateSubscriber(long deadline) {
+   private void terrminateSubscriber() {
       log.info("Nacking messages not delivered to kafka and stopping the subscriber. {}", metrics());
       nackReceivedMessages();
-      subscriber.stopAsync();
       long start = System.nanoTime();
-      while (msTo(deadline) > 0) {
-         nackReceivedMessages();
-         sleeper.sleep(1000);
-      }
-
-      if (subscriber.state().equals(ApiService.State.TERMINATED)) {
+      subscriber.stopAsync();
+      try {
+         subscriber.awaitTerminated(config.getSubscriberTerminationTimeoutMs(), TimeUnit.MILLISECONDS);
          log.info("Subscriber is terminated in {} ms. {}", msSince(start), metrics());
-      } else {
+      } catch (TimeoutException e) {
          log.info("Subscriber was not terminated in {} ms. {}", msSince(start), metrics());
       }
    }
@@ -284,13 +305,13 @@ public class PubsubSourceTask extends SourceTask {
       MessageInFlight m = messages.getIfPresent(messageId);
       if (m != null) {
          m.ack(ack);
-         if (isDebugEnabled(messageId)) {
-            log.debug("Acked {}. {}", m, metrics());
+         if (isDebugEnabled(m.getMessageKey())) {
+            log.debug("{} {}. {}", ack ? "Acked" : "Nacked", m, metrics());
          }
          messages.asMap().remove(messageId);
       } else {
          metrics.onAckLost();
-         if (isDebugEnabled(messageId)) {
+         if (isDebugEnabled(record.key() == null ? messageId : record.key().toString())) {
             log.warn("Nothing to ack[{}] for {}/{}. So far: {}. Debug enabled.", ack, messageId, record.key(), metrics.getAckLostCount());
          } else {
             log.warn("Nothing to ack[{}] for {}/{}. So far: {}", ack, messageId, record.key(), metrics.getAckLostCount());
@@ -299,11 +320,45 @@ public class PubsubSourceTask extends SourceTask {
    }
 
    /**
-    * Triggers the shutdown process. All the necessary final actions happen in {@link #commit()}.
+    * Kicks off async shutdown sequence. See {@link PubsubSourceTask#shutdown()}
     */
    @Override public void stop() {
       log.info("Stopping the task. {}", metrics());
-      stopping.set(true);
+      if (isRunning()) {
+         state.countDown();
+         new Thread(this::shutdown, taskId() + "-shutdown").start();
+      } else {
+         log.error("Unexpected state: {}", state.getCount());
+      }
+   }
+
+   /**
+    * Attempts to do the following asynchronously:
+    * <ul>
+    * <li>Wait for all in flight messages to be delivered to kafka and acknowledge those in Cloud PubSub</li>
+    * <li>Wait for Cloud PubSub subscriber to shutdown and 'nacks' all messages that have been received but not delivered to kafka</li>
+    * </ul>
+    * <p>
+    * Should take no longer then sum of {@link PubsubSourceConnectorConfig#SHUTDOWN_INFLIGHT_ACK_TIMEOUT_MS_CONFIG} and
+    * {@link PubsubSourceConnectorConfig#SHUTDOWN_TERMINATE_SUBSCRIBER_TIMEOUT_MS_CONFIG}.
+    */
+   private void shutdown() {
+      pollStopLock.lock();
+      try {
+         long start = System.nanoTime();
+
+         waitForPolledMessagesToBeAcknowledged();
+         terrminateSubscriber();
+
+         if (!isClean()) {
+            log.warn("Task is shutdown with unclean state in {}ms. {}", msSince(start), metrics());
+         } else {
+            log.info("Task is shutdown in {}ms. {}", msSince(start), metrics());
+         }
+      } finally {
+         pollStopLock.unlock();
+         state.countDown();
+      }
    }
 
    /**
@@ -320,6 +375,17 @@ public class PubsubSourceTask extends SourceTask {
       return messages.asMap().values().stream().filter(MessageInFlight::isPolled).count();
    }
 
+   private void dumpPolledMessages() {
+      if (debugLoggingEnabled) {
+         final AtomicInteger count = new AtomicInteger();
+         List<String> messageBatches = messages.asMap().values().stream().filter(MessageInFlight::isPolled).map(Object::toString).collect(Collectors.toList());
+         stream(partition(messageBatches, DUMP_MESSAGE_IN_FLIGHT_BATCH_SIZE).spliterator(), false)
+             .forEach(messageInFlights ->
+                 log.debug("Polled messages batch {} of {}: {}", count.incrementAndGet(), messageBatches.size(), join(",", messageInFlights))
+             );
+      }
+   }
+
    public TaskMetrics getMetrics() {
       return metrics;
    }
@@ -331,10 +397,22 @@ public class PubsubSourceTask extends SourceTask {
    void onMessageRemoval(RemovalNotification<String, MessageInFlight> removal) {
       if (removal.wasEvicted()) {
          metrics.onEvicted();
-         if (isDebugEnabled(removal.getKey())) {
+         if (isDebugEnabled(removal.getValue().getMessageKey())) {
             log.debug("Evicted {}. {}", removal.getValue(), metrics());
          }
       }
+   }
+
+   public boolean isStopped() {
+      return state.getCount() == 0;
+   }
+
+   public boolean isStopping() {
+      return state.getCount() < 2;
+   }
+
+   public boolean isRunning() {
+      return state.getCount() == 2;
    }
 
    /**
@@ -355,7 +433,6 @@ public class PubsubSourceTask extends SourceTask {
          }
       }
    }
-
 
    class LoggingSubscriberListener extends Subscriber.Listener {
       @Override public void failed(Subscriber.State from, Throwable failure) {

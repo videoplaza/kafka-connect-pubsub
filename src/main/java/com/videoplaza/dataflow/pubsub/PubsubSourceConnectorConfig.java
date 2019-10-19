@@ -10,6 +10,7 @@ import org.threeten.bp.Duration;
 
 import java.util.Map;
 
+import static org.apache.kafka.common.config.ConfigDef.Type.BOOLEAN;
 import static org.apache.kafka.common.config.ConfigDef.Type.INT;
 import static org.apache.kafka.common.config.ConfigDef.Type.LONG;
 import static org.apache.kafka.common.config.ConfigDef.Type.STRING;
@@ -37,7 +38,7 @@ public class PubsubSourceConnectorConfig extends AbstractConfig {
     */
    public static final String GCPS_MAX_OUTSTANDING_ELEMENTS_CONFIG = "flow.control.max.outstanding.elements";
    private static final String GCPS_MAX_OUTSTANDING_ELEMENTS_DOC = "Maximum number of outstanding pubsub messages to keep in memory before enforcing flow control. See https://cloud.google.com/pubsub/docs/pull#message-flow-control";
-   static final Long GCPS_MAX_OUTSTANDING_ELEMENTS_DEFAULT = 1_000_000L;
+   static final Long GCPS_MAX_OUTSTANDING_ELEMENTS_DEFAULT = 10_000L;
 
    /**
     * See {@link FlowControlSettings.Builder#getMaxOutstandingRequestBytes()}
@@ -46,12 +47,16 @@ public class PubsubSourceConnectorConfig extends AbstractConfig {
    private static final String GCPS_MAX_OUTSTANDING_BYTES_DOC = "Maximum number of outstanding bytes to keep in memory before enforcing flow control. See https://cloud.google.com/pubsub/docs/pull#message-flow-control";
    static final Long GCPS_MAX_OUTSTANDING_BYTES_DEFAULT = 1_000_000_000L;
 
-   public static final String GCPS_SHUTDOWN_TIMEOUT_MS_CONFIG = "shutdown.timeout.ms";
-   private static final String GCPS_SHUTDOWN_TIMEOUT_MS_DOC = "Time in ms to wait for all read messages being acknowledged and terminate pubsub subscriber during shutdown.";
-   static final Long GCPS_SHUTDOWN_TIMEOUT_MS_DEFAULT = 5_000L;
+   public static final String SHUTDOWN_INFLIGHT_ACK_TIMEOUT_MS_CONFIG = "shutdown.inflight.ack.timeout.ms";
+   private static final String SHUTDOWN_INFLIGHT_ACK_TIMEOUT_MS_DOC = "Time in milliseconds to wait for all messages that have already been polled by kafka connect framework to be acknowledged during shutdown.";
+   static final Long SHUTDOWN_INFLIGHT_ACK_TIMEOUT_MS_DEFAULT = 3_000L;
+
+   public static final String SHUTDOWN_TERMINATE_SUBSCRIBER_TIMEOUT_MS_CONFIG = "shutdown.terminate.subscriber.timeout.ms";
+   private static final String SHUTDOWN_TERMINATE_SUBSCRIBER_TIMEOUT_MS_DOC = "Time in milliseconds to wait for Cloud Pub/Sub subscriber to terminate during shutdown.";
+   static final Long SHUTDOWN_TERMINATE_SUBSCRIBER_TIMEOUT_MS_DEFAULT = 6_000L;
 
    public static final String POLL_TIMEOUT_MS_CONFIG = "poll.timeout.ms";
-   private static final String POLL_TIMEOUT_MS_DOC = "Time in ms to wait for messages to be read from pubsub before returning from poll method.";
+   private static final String POLL_TIMEOUT_MS_DOC = "Time in milliseconds to wait for messages to be read from pubsub before returning from poll method.";
    static final Long POLL_TIMEOUT_MS_DEFAULT = 100L;
 
    /**
@@ -59,11 +64,11 @@ public class PubsubSourceConnectorConfig extends AbstractConfig {
     */
    public static final String GCPS_MAX_ACK_EXTENSION_PERIOD_SEC_CONFIG = "max.ack.extension.period.sec";
    private static final String GCPS_MAX_ACK_EXTENSION_PERIOD_SEC_DOC = "Maximum period in seconds a message ack deadline will be extended. Defaults to one hour. It is recommended to set this value to a reasonable upper bound of the subscriber time to process any message. A zero duration effectively disables auto deadline extensions. See https://googleapis.dev/java/google-cloud-clients/latest/com/google/cloud/pubsub/v1/Subscriber.Builder.html#setMaxAckExtensionPeriod-org.threeten.bp.Duration-";
-   static final long GCPS_MAX_ACK_EXTENSION_PERIOD_SEC_DEFAULT = 3600;
+   static final long GCPS_MAX_ACK_EXTENSION_PERIOD_SEC_DEFAULT = 3600L;
 
 
    public static final String CACHE_EXPIRATION_DEADLINE_SEC_CONFIG = "cache.expiration.deadline.sec";
-   private static final String CACHE_EXPIRATION_DEADLINE_SEC_DOC = "Maximum period in seconds a message is kept in internal cache if not delivered to kafka. Messages with same ids are considered duplicates and discarded. This should be greater than `delivery.timeout.ms` setting for kafka producer and less than max ack deadline in Cloud Pub/Sub";
+   private static final String CACHE_EXPIRATION_DEADLINE_SEC_DOC = "Maximum period in seconds a message is kept in internal cache if not delivered to kafka. Messages with same ids are considered duplicates and discarded. This should be greater than `delivery.timeout.ms` setting for kafka producer and less than `max.ack.extension.period.sec` in Cloud Pub/Sub";
    static final long CACHE_EXPIRATION_DEADLINE_SEC_DEFAULT = GCPS_MAX_ACK_EXTENSION_PERIOD_SEC_DEFAULT - 10;
 
    /**
@@ -77,6 +82,9 @@ public class PubsubSourceConnectorConfig extends AbstractConfig {
    private static final String DEBUG_LOG_SPARSITY_DOC = "Number of messages to skip per single log line. Does have any effect if debug logging is disabled";
    static final int DEBUG_LOG_SPARSITY_DEFAULT = 1;
 
+   public static final String NACK_MESSAGES_DURING_SHUTDOWN_CONFIG = "nack.messages.during.shutdown";
+   private static final String NACK_MESSAGES_DURING_SHUTDOWN_DOC = "If true a message received from pubsub during shutdown will be nacked immediately, with subsequent redelivery. Minimizes delays cause by stopping the connector, but increases redelivery rates during shutdown";
+   static final boolean NACK_MESSAGES_DURING_SHUTDOWN_DEFAULT = false;
 
    public static final ConfigDef CONFIG = configDef();
 
@@ -116,20 +124,26 @@ public class PubsubSourceConnectorConfig extends AbstractConfig {
           GCPS_MAX_OUTSTANDING_ELEMENTS_CONFIG,
           LONG,
           GCPS_MAX_OUTSTANDING_ELEMENTS_DEFAULT,
-          Importance.LOW,
+          Importance.MEDIUM,
           GCPS_MAX_OUTSTANDING_ELEMENTS_DOC
       ).define(
           GCPS_MAX_OUTSTANDING_BYTES_CONFIG,
           LONG,
           GCPS_MAX_OUTSTANDING_BYTES_DEFAULT,
-          Importance.LOW,
+          Importance.MEDIUM,
           GCPS_MAX_OUTSTANDING_BYTES_DOC
       ).define(
-          GCPS_SHUTDOWN_TIMEOUT_MS_CONFIG,
+          SHUTDOWN_TERMINATE_SUBSCRIBER_TIMEOUT_MS_CONFIG,
           LONG,
-          GCPS_SHUTDOWN_TIMEOUT_MS_DEFAULT,
+          SHUTDOWN_TERMINATE_SUBSCRIBER_TIMEOUT_MS_DEFAULT,
           Importance.LOW,
-          GCPS_SHUTDOWN_TIMEOUT_MS_DOC
+          SHUTDOWN_TERMINATE_SUBSCRIBER_TIMEOUT_MS_DOC
+      ).define(
+          SHUTDOWN_INFLIGHT_ACK_TIMEOUT_MS_CONFIG,
+          LONG,
+          SHUTDOWN_INFLIGHT_ACK_TIMEOUT_MS_DEFAULT,
+          Importance.LOW,
+          SHUTDOWN_INFLIGHT_ACK_TIMEOUT_MS_DOC
       ).define(
           POLL_TIMEOUT_MS_CONFIG,
           LONG,
@@ -140,7 +154,7 @@ public class PubsubSourceConnectorConfig extends AbstractConfig {
           GCPS_MAX_ACK_EXTENSION_PERIOD_SEC_CONFIG,
           LONG,
           GCPS_MAX_ACK_EXTENSION_PERIOD_SEC_DEFAULT,
-          Importance.MEDIUM,
+          Importance.HIGH,
           GCPS_MAX_ACK_EXTENSION_PERIOD_SEC_DOC
       ).define(
           GCPS_PARALLEL_PULL_COUNT_CONFIG,
@@ -152,7 +166,7 @@ public class PubsubSourceConnectorConfig extends AbstractConfig {
           CACHE_EXPIRATION_DEADLINE_SEC_CONFIG,
           LONG,
           CACHE_EXPIRATION_DEADLINE_SEC_DEFAULT,
-          Importance.MEDIUM,
+          Importance.HIGH,
           CACHE_EXPIRATION_DEADLINE_SEC_DOC
       ).define(
           DEBUG_LOG_SPARSITY_CONFIG,
@@ -160,6 +174,12 @@ public class PubsubSourceConnectorConfig extends AbstractConfig {
           DEBUG_LOG_SPARSITY_DEFAULT,
           Importance.LOW,
           DEBUG_LOG_SPARSITY_DOC
+      ).define(
+          NACK_MESSAGES_DURING_SHUTDOWN_CONFIG,
+          BOOLEAN,
+          NACK_MESSAGES_DURING_SHUTDOWN_DEFAULT,
+          Importance.LOW,
+          NACK_MESSAGES_DURING_SHUTDOWN_DOC
       );
    }
 
@@ -191,8 +211,12 @@ public class PubsubSourceConnectorConfig extends AbstractConfig {
       return getLong(GCPS_MAX_OUTSTANDING_BYTES_CONFIG);
    }
 
-   public long getTerminationTimeoutMs() {
-      return getLong(GCPS_SHUTDOWN_TIMEOUT_MS_CONFIG);
+   public long getSubscriberTerminationTimeoutMs() {
+      return getLong(SHUTDOWN_TERMINATE_SUBSCRIBER_TIMEOUT_MS_CONFIG);
+   }
+
+   public long getInflightAckTimeoutMs() {
+      return getLong(SHUTDOWN_INFLIGHT_ACK_TIMEOUT_MS_CONFIG);
    }
 
    public long gePollTimeoutMs() {
@@ -227,4 +251,11 @@ public class PubsubSourceConnectorConfig extends AbstractConfig {
       return getInt(GCPS_PARALLEL_PULL_COUNT_CONFIG);
    }
 
+   public boolean shouldNackMessagesDuringShutdown() {
+      return getBoolean(NACK_MESSAGES_DURING_SHUTDOWN_CONFIG);
+   }
+
+   public long getTotalTerminationTimeoutMs() {
+      return getSubscriberTerminationTimeoutMs() + getInflightAckTimeoutMs() + 2000 ;
+   }
 }

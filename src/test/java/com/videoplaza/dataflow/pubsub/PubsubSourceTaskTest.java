@@ -17,9 +17,9 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 import static com.videoplaza.dataflow.pubsub.PubsubSourceConnectorConfig.GCPS_PROJECT_CONFIG;
-import static com.videoplaza.dataflow.pubsub.PubsubSourceConnectorConfig.GCPS_SHUTDOWN_TIMEOUT_MS_CONFIG;
 import static com.videoplaza.dataflow.pubsub.PubsubSourceConnectorConfig.GCPS_SUBSCRIPTION_CONFIG;
 import static com.videoplaza.dataflow.pubsub.PubsubSourceConnectorConfig.KAFKA_TOPIC_CONFIG;
 import static org.junit.Assert.assertEquals;
@@ -39,8 +39,7 @@ public class PubsubSourceTaskTest {
        .configure(Map.of(
            GCPS_PROJECT_CONFIG, "project",
            GCPS_SUBSCRIPTION_CONFIG, "subscription",
-           KAFKA_TOPIC_CONFIG, "topic",
-           GCPS_SHUTDOWN_TIMEOUT_MS_CONFIG, "1000"
+           KAFKA_TOPIC_CONFIG, "topic"
        ))
        .subscribe(subscriber)
        .configure(CacheBuilder.newBuilder().expireAfterWrite(10, TimeUnit.SECONDS).build())
@@ -66,9 +65,10 @@ public class PubsubSourceTaskTest {
    @Test public void test() {
       String id1 = "741967042247751";
       String id2 = "741967042247751";
-      assertEquals(id1.hashCode(),id2.hashCode());
+      assertEquals(id1.hashCode(), id2.hashCode());
 
    }
+
    @Test public void testPoll() {
       pubsubSourceTask.onPubsubMessageReceived(MESSAGE, ackSupplier);
       assertEquals(1, pubsubSourceTask.poll().size());
@@ -76,7 +76,7 @@ public class PubsubSourceTaskTest {
       assertEquals(1, pubsubSourceTask.getPolledCount());
    }
 
-   @Test public void testMessageLifeCycle() {
+   @Test public void testMessageLifeCycle() throws TimeoutException {
       pubsubSourceTask.onPubsubMessageReceived(MESSAGE, ackSupplier);
       assertEquals(1, pubsubSourceTask.getToBePolledCount());
 
@@ -93,7 +93,9 @@ public class PubsubSourceTaskTest {
       assertEquals(0, pubsubSourceTask.getMetrics().getNackCount());
       assertEquals(1, pubsubSourceTask.getMetrics().getReceivedCount());
 
-      pubsubSourceTask.commit();
+      stopTask();
+      verify(subscriber).stopAsync();
+      verify(subscriber).awaitTerminated(PubsubSourceConnectorConfig.SHUTDOWN_TERMINATE_SUBSCRIBER_TIMEOUT_MS_DEFAULT, TimeUnit.MILLISECONDS);
       verifyNoMoreInteractions(subscriber);
    }
 
@@ -103,12 +105,8 @@ public class PubsubSourceTaskTest {
       SourceRecord record = pubsubSourceTask.poll().get(0);
 
       assertEquals(0, pubsubSourceTask.getToBePolledCount());
-      pubsubSourceTask.stop();
 
-      executor.execute(() -> {
-         pubsubSourceTask.commit();
-         asyncCompletedLatch.countDown();
-      });
+      stopTaskAsync();
 
       assertTrue(sleeper.awaitSleep(2000));
       assertEquals(1, pubsubSourceTask.getPolledCount());
@@ -123,21 +121,34 @@ public class PubsubSourceTaskTest {
       assertEquals(1, pubsubSourceTask.getMetrics().getReceivedCount());
    }
 
+   private void stopTask() {
+      pubsubSourceTask.stop();
+      while (!pubsubSourceTask.isStopped()) {
+         try {
+            Thread.sleep(100);
+         } catch (InterruptedException e) {
+         }
+      }
+   }
+
+   private void stopTaskAsync() {
+      executor.execute(() -> {
+         stopTask();
+         asyncCompletedLatch.countDown();
+      });
+   }
+
    @Test public void testStopBeforeMessagePolled() throws InterruptedException {
       pubsubSourceTask.onPubsubMessageReceived(MESSAGE, ackSupplier);
-      pubsubSourceTask.stop();
 
       assertEquals(1, pubsubSourceTask.getToBePolledCount());
       assertEquals(0, pubsubSourceTask.getPolledCount());
 
-      executor.execute(() -> {
-         pubsubSourceTask.commit();
-         asyncCompletedLatch.countDown();
-      });
+      stopTaskAsync();
 
-      asyncCompletedLatch.await(2000, TimeUnit.MILLISECONDS);
+      asyncCompletedLatch.await(6000, TimeUnit.MILLISECONDS);
 
-      assertEquals(0, sleeper.sleptLatch.getCount());
+      //assertEquals(0, sleeper.sleptLatch.getCount());
       verify(subscriber).stopAsync();
 
       assertEquals(0, pubsubSourceTask.getPolledCount());

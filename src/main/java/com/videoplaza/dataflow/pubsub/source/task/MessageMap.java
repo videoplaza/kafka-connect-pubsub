@@ -1,6 +1,8 @@
 package com.videoplaza.dataflow.pubsub.source.task;
 
 import com.google.common.cache.Cache;
+import com.google.common.cache.CacheBuilder;
+import com.google.common.cache.RemovalNotification;
 import org.apache.kafka.connect.source.SourceRecord;
 import org.slf4j.Logger;
 
@@ -8,7 +10,9 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Consumer;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -19,13 +23,23 @@ import static java.util.stream.StreamSupport.stream;
 
 public class MessageMap {
 
-   private static final int DUMP_MESSAGE_IN_FLIGHT_BATCH_SIZE = 500;
+   private static final int DUMP_MESSAGE_IN_FLIGHT_BATCH_SIZE = 200;
    private final Cache<String, Message> cache;
    private final Set<Message> toBePolled = ConcurrentHashMap.newKeySet();
+   private final Consumer<Message> onEviction;
 
+   public MessageMap(long expireAfterWriteMs, Consumer<Message> onEviction) {
+      this.cache = CacheBuilder.newBuilder()
+          .expireAfterWrite(expireAfterWriteMs, TimeUnit.SECONDS)
+          .removalListener(this::onMessageRemoval)
+          .build();
+      this.onEviction = onEviction;
+   }
 
-   public MessageMap(Cache<String, Message> cache) {
-      this.cache = cache;
+   private void onMessageRemoval(RemovalNotification<String, Message> removal) {
+      if (removal.wasEvicted() && onEviction != null) {
+         onEviction.accept(removal.getValue());
+      }
    }
 
    public Message get(String key) {
@@ -56,8 +70,8 @@ public class MessageMap {
    public void dump(Logger log) {
       if (log.isDebugEnabled()) {
          final AtomicInteger count = new AtomicInteger();
-         List<String> messageBatches = polled().map(Object::toString).collect(Collectors.toList());
-         stream(partition(messageBatches, DUMP_MESSAGE_IN_FLIGHT_BATCH_SIZE).spliterator(), false)
+         List<List<String>> messageBatches = stream(partition(polled().map(Object::toString).collect(Collectors.toList()), DUMP_MESSAGE_IN_FLIGHT_BATCH_SIZE).spliterator(), false).collect(toList());
+         messageBatches
              .forEach(messageInFlights ->
                  log.debug("Polled messages batch {} of {}: {}", count.incrementAndGet(), messageBatches.size(), join(",", messageInFlights))
              );

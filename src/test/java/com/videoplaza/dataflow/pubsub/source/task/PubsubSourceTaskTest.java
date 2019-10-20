@@ -3,13 +3,10 @@ package com.videoplaza.dataflow.pubsub.source.task;
 import com.google.api.core.ApiService;
 import com.google.cloud.pubsub.v1.AckReplyConsumer;
 import com.google.cloud.pubsub.v1.Subscriber;
-import com.google.common.cache.CacheBuilder;
 import com.google.protobuf.ByteString;
 import com.google.protobuf.Timestamp;
 import com.google.pubsub.v1.PubsubMessage;
 import com.videoplaza.dataflow.pubsub.PubsubSourceConnectorConfig;
-import com.videoplaza.dataflow.pubsub.source.task.MessageMap;
-import com.videoplaza.dataflow.pubsub.source.task.PubsubSourceTask;
 import org.apache.kafka.connect.source.SourceRecord;
 import org.junit.Before;
 import org.junit.Test;
@@ -37,12 +34,15 @@ public class PubsubSourceTaskTest {
 
    private final Subscriber subscriber = mock(Subscriber.class);
 
+   private final MessageMap messages = new MessageMap(10000, null);
+
    private final PubsubSourceTask pubsubSourceTask = new PubsubSourceTask()
        .configure(Map.of(
            GCPS_PROJECT_CONFIG, "project",
            GCPS_SUBSCRIPTION_CONFIG, "subscription",
            KAFKA_TOPIC_CONFIG, "topic"
        ))
+       .configure(messages)
        .subscribe(subscriber);
 
 
@@ -57,15 +57,9 @@ public class PubsubSourceTaskTest {
        .setPublishTime(Timestamp.newBuilder().setSeconds(12345L).build())
        .build();
 
-   private MessageMap messages;
-
    @Before public void setUp() {
       when(subscriber.state()).thenReturn(ApiService.State.TERMINATED);
       verify(subscriber).startAsync();
-      messages = new MessageMap(
-          CacheBuilder.newBuilder().expireAfterWrite(10, TimeUnit.SECONDS).build()
-      );
-      pubsubSourceTask.configure(messages);
    }
 
    @Test public void test() {

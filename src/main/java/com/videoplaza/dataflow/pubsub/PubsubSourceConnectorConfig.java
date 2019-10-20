@@ -27,64 +27,64 @@ public class PubsubSourceConnectorConfig extends AbstractConfig {
 
    public static final String GCPS_KEY_ATTRIBUTE_CONFIG = "key.attribute";
    private static final String GCPS_KEY_ATTRIBUTE_DOC = "The Cloud Pub/Sub message attribute to use as a key for messages published to Kafka.";
-   static final String GCPS_KEY_ATTRIBUTE_DEFAULT = "";
+   public static final String GCPS_KEY_ATTRIBUTE_DEFAULT = "";
 
    public static final String GCPS_TIMESTAMP_ATTRIBUTE_CONFIG = "timestamp.attribute";
    private static final String GCPS_TIMESTAMP_ATTRIBUTE_DOC = "The Cloud Pub/Sub message attribute to use as a timestamp for messages published to Kafka.";
-   static final String GCPS_TIMESTAMP_ATTRIBUTE_DEFAULT = "";
+   public static final String GCPS_TIMESTAMP_ATTRIBUTE_DEFAULT = "";
 
    /**
     * See {@link FlowControlSettings.Builder#getMaxOutstandingElementCount()}
     */
    public static final String GCPS_MAX_OUTSTANDING_ELEMENTS_CONFIG = "flow.control.max.outstanding.elements";
    private static final String GCPS_MAX_OUTSTANDING_ELEMENTS_DOC = "Maximum number of outstanding pubsub messages to keep in memory before enforcing flow control. See https://cloud.google.com/pubsub/docs/pull#message-flow-control";
-   static final Long GCPS_MAX_OUTSTANDING_ELEMENTS_DEFAULT = 10_000L;
+   public static final Long GCPS_MAX_OUTSTANDING_ELEMENTS_DEFAULT = 10_000L;
 
    /**
     * See {@link FlowControlSettings.Builder#getMaxOutstandingRequestBytes()}
     */
    public static final String GCPS_MAX_OUTSTANDING_BYTES_CONFIG = "flow.control.max.outstanding.bytes";
    private static final String GCPS_MAX_OUTSTANDING_BYTES_DOC = "Maximum number of outstanding bytes to keep in memory before enforcing flow control. See https://cloud.google.com/pubsub/docs/pull#message-flow-control";
-   static final Long GCPS_MAX_OUTSTANDING_BYTES_DEFAULT = 1_000_000_000L;
+   public static final Long GCPS_MAX_OUTSTANDING_BYTES_DEFAULT = 1_000_000_000L;
 
    public static final String SHUTDOWN_INFLIGHT_ACK_TIMEOUT_MS_CONFIG = "shutdown.inflight.ack.timeout.ms";
    private static final String SHUTDOWN_INFLIGHT_ACK_TIMEOUT_MS_DOC = "Time in milliseconds to wait for all messages that have already been polled by kafka connect framework to be acknowledged during shutdown.";
-   static final Long SHUTDOWN_INFLIGHT_ACK_TIMEOUT_MS_DEFAULT = 3_000L;
+   public static final Long SHUTDOWN_INFLIGHT_ACK_TIMEOUT_MS_DEFAULT = 3_000L;
 
    public static final String SHUTDOWN_TERMINATE_SUBSCRIBER_TIMEOUT_MS_CONFIG = "shutdown.terminate.subscriber.timeout.ms";
    private static final String SHUTDOWN_TERMINATE_SUBSCRIBER_TIMEOUT_MS_DOC = "Time in milliseconds to wait for Cloud Pub/Sub subscriber to terminate during shutdown.";
-   static final Long SHUTDOWN_TERMINATE_SUBSCRIBER_TIMEOUT_MS_DEFAULT = 6_000L;
+   public static final Long SHUTDOWN_TERMINATE_SUBSCRIBER_TIMEOUT_MS_DEFAULT = 6_000L;
 
    public static final String POLL_TIMEOUT_MS_CONFIG = "poll.timeout.ms";
    private static final String POLL_TIMEOUT_MS_DOC = "Time in milliseconds to wait for messages to be read from pubsub before returning from poll method.";
-   static final Long POLL_TIMEOUT_MS_DEFAULT = 100L;
+   public static final Long POLL_TIMEOUT_MS_DEFAULT = 100L;
 
    /**
     * See {@link com.google.cloud.pubsub.v1.Subscriber.Builder#setMaxAckExtensionPeriod(Duration)}
     */
    public static final String GCPS_MAX_ACK_EXTENSION_PERIOD_SEC_CONFIG = "max.ack.extension.period.sec";
    private static final String GCPS_MAX_ACK_EXTENSION_PERIOD_SEC_DOC = "Maximum period in seconds a message ack deadline will be extended. Defaults to one hour. It is recommended to set this value to a reasonable upper bound of the subscriber time to process any message. A zero duration effectively disables auto deadline extensions. See https://googleapis.dev/java/google-cloud-clients/latest/com/google/cloud/pubsub/v1/Subscriber.Builder.html#setMaxAckExtensionPeriod-org.threeten.bp.Duration-";
-   static final long GCPS_MAX_ACK_EXTENSION_PERIOD_SEC_DEFAULT = 3600L;
+   public static final long GCPS_MAX_ACK_EXTENSION_PERIOD_SEC_DEFAULT = 3600L;
 
 
    public static final String CACHE_EXPIRATION_DEADLINE_SEC_CONFIG = "cache.expiration.deadline.sec";
    private static final String CACHE_EXPIRATION_DEADLINE_SEC_DOC = "Maximum period in seconds a message is kept in internal cache if not delivered to kafka. Messages with same ids are considered duplicates and discarded. This should be greater than `delivery.timeout.ms` setting for kafka producer and less than `max.ack.extension.period.sec` in Cloud Pub/Sub";
-   static final long CACHE_EXPIRATION_DEADLINE_SEC_DEFAULT = GCPS_MAX_ACK_EXTENSION_PERIOD_SEC_DEFAULT - 10;
+   public static final long CACHE_EXPIRATION_DEADLINE_SEC_DEFAULT = GCPS_MAX_ACK_EXTENSION_PERIOD_SEC_DEFAULT - 10;
 
    /**
     * See {@link com.google.cloud.pubsub.v1.Subscriber.Builder#setParallelPullCount(int)}
     */
    public static final String GCPS_PARALLEL_PULL_COUNT_CONFIG = "parallel.pull.count";
    private static final String GCPS_PARALLEL_PULL_COUNT_DOC = "Number of pullers used to pull messages from the subscription. Defaults to one. See https://googleapis.dev/java/google-cloud-clients/latest/com/google/cloud/pubsub/v1/Subscriber.Builder.html#setParallelPullCount-int-";
-   static final int GCPS_PARALLEL_PULL_COUNT_DEFAULT = 1;
+   public static final int GCPS_PARALLEL_PULL_COUNT_DEFAULT = 1;
 
    public static final String DEBUG_LOG_SPARSITY_CONFIG = "debug.log.sparsity";
    private static final String DEBUG_LOG_SPARSITY_DOC = "Number of messages to skip per single log line. Does have any effect if debug logging is disabled";
-   static final int DEBUG_LOG_SPARSITY_DEFAULT = 1;
+   public static final int DEBUG_LOG_SPARSITY_DEFAULT = 1;
 
    public static final String NACK_MESSAGES_DURING_SHUTDOWN_CONFIG = "nack.messages.during.shutdown";
    private static final String NACK_MESSAGES_DURING_SHUTDOWN_DOC = "If true a message received from pubsub during shutdown will be nacked immediately, with subsequent redelivery. Minimizes delays cause by stopping the connector, but increases redelivery rates during shutdown";
-   static final boolean NACK_MESSAGES_DURING_SHUTDOWN_DEFAULT = false;
+   public static final boolean NACK_MESSAGES_DURING_SHUTDOWN_DEFAULT = false;
 
    public static final ConfigDef CONFIG = configDef();
 
@@ -256,6 +256,6 @@ public class PubsubSourceConnectorConfig extends AbstractConfig {
    }
 
    public long getTotalTerminationTimeoutMs() {
-      return getSubscriberTerminationTimeoutMs() + getInflightAckTimeoutMs() + 2000 ;
+      return getSubscriberTerminationTimeoutMs() + getInflightAckTimeoutMs() + 2000;
    }
 }

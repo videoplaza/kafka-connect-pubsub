@@ -1,4 +1,4 @@
-package com.videoplaza.dataflow.pubsub;
+package com.videoplaza.dataflow.pubsub.util;
 
 import java.util.concurrent.atomic.AtomicLong;
 

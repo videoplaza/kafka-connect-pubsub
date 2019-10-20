@@ -3,6 +3,7 @@ package com.videoplaza.dataflow.pubsub;
 import com.google.protobuf.ByteString;
 import com.google.protobuf.Timestamp;
 import com.google.pubsub.v1.PubsubMessage;
+import com.videoplaza.dataflow.pubsub.source.task.PubsubMessageConverter;
 import org.apache.kafka.connect.source.SourceRecord;
 import org.junit.Test;
 

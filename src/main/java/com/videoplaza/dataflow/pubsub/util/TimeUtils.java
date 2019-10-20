@@ -1,10 +1,11 @@
-package com.videoplaza.dataflow.pubsub;
+package com.videoplaza.dataflow.pubsub.util;
 
 import static java.util.concurrent.TimeUnit.NANOSECONDS;
 
 public class TimeUtils {
 
-   private TimeUtils() {}
+   private TimeUtils() {
+   }
 
    public static long msSince(long startNanos) {
       return Math.max(0, NANOSECONDS.toMillis(System.nanoTime() - startNanos));

@@ -1,4 +1,4 @@
-package com.videoplaza.dataflow.pubsub;
+package com.videoplaza.dataflow.pubsub.source.task;
 
 import com.google.api.core.ApiService;
 import com.google.cloud.pubsub.v1.AckReplyConsumer;
@@ -7,6 +7,9 @@ import com.google.common.cache.CacheBuilder;
 import com.google.protobuf.ByteString;
 import com.google.protobuf.Timestamp;
 import com.google.pubsub.v1.PubsubMessage;
+import com.videoplaza.dataflow.pubsub.PubsubSourceConnectorConfig;
+import com.videoplaza.dataflow.pubsub.source.task.MessageMap;
+import com.videoplaza.dataflow.pubsub.source.task.PubsubSourceTask;
 import org.apache.kafka.connect.source.SourceRecord;
 import org.junit.Before;
 import org.junit.Test;
@@ -33,7 +36,6 @@ import static org.mockito.Mockito.when;
 public class PubsubSourceTaskTest {
 
    private final Subscriber subscriber = mock(Subscriber.class);
-   private final TestSleeper sleeper = new TestSleeper();
 
    private final PubsubSourceTask pubsubSourceTask = new PubsubSourceTask()
        .configure(Map.of(
@@ -41,9 +43,8 @@ public class PubsubSourceTaskTest {
            GCPS_SUBSCRIPTION_CONFIG, "subscription",
            KAFKA_TOPIC_CONFIG, "topic"
        ))
-       .subscribe(subscriber)
-       .configure(CacheBuilder.newBuilder().expireAfterWrite(10, TimeUnit.SECONDS).build())
-       .configure(sleeper);
+       .subscribe(subscriber);
+
 
    private final ExecutorService executor = Executors.newSingleThreadExecutor();
    private final CountDownLatch asyncCompletedLatch = new CountDownLatch(1);
@@ -56,10 +57,15 @@ public class PubsubSourceTaskTest {
        .setPublishTime(Timestamp.newBuilder().setSeconds(12345L).build())
        .build();
 
+   private MessageMap messages;
+
    @Before public void setUp() {
       when(subscriber.state()).thenReturn(ApiService.State.TERMINATED);
       verify(subscriber).startAsync();
-
+      messages = new MessageMap(
+          CacheBuilder.newBuilder().expireAfterWrite(10, TimeUnit.SECONDS).build()
+      );
+      pubsubSourceTask.configure(messages);
    }
 
    @Test public void test() {
@@ -72,21 +78,21 @@ public class PubsubSourceTaskTest {
    @Test public void testPoll() {
       pubsubSourceTask.onPubsubMessageReceived(MESSAGE, ackSupplier);
       assertEquals(1, pubsubSourceTask.poll().size());
-      assertEquals(0, pubsubSourceTask.getToBePolledCount());
-      assertEquals(1, pubsubSourceTask.getPolledCount());
+      assertEquals(0, messages.getToBePolledCount());
+      assertEquals(1, messages.getPolledCount());
    }
 
    @Test public void testMessageLifeCycle() throws TimeoutException {
       pubsubSourceTask.onPubsubMessageReceived(MESSAGE, ackSupplier);
-      assertEquals(1, pubsubSourceTask.getToBePolledCount());
+      assertEquals(1, messages.getToBePolledCount());
 
       List<SourceRecord> records = pubsubSourceTask.poll();
       assertEquals(1, records.size());
-      assertEquals(0, pubsubSourceTask.getToBePolledCount());
-      assertEquals(1, pubsubSourceTask.getPolledCount());
+      assertEquals(0, messages.getToBePolledCount());
+      assertEquals(1, messages.getPolledCount());
 
       pubsubSourceTask.commitRecord(records.get(0));
-      assertEquals(0, pubsubSourceTask.getPolledCount());
+      assertEquals(0, messages.getPolledCount());
       assertTrue(ackSupplier.acked);
       assertFalse(ackSupplier.nacked);
       assertEquals(1, pubsubSourceTask.getMetrics().getAckCount());
@@ -101,19 +107,19 @@ public class PubsubSourceTaskTest {
 
    @Test public void testStopAfterMessagePolled() throws InterruptedException {
       pubsubSourceTask.onPubsubMessageReceived(MESSAGE, ackSupplier);
-      assertEquals(1, pubsubSourceTask.getToBePolledCount());
+      assertEquals(1, messages.getToBePolledCount());
       SourceRecord record = pubsubSourceTask.poll().get(0);
 
-      assertEquals(0, pubsubSourceTask.getToBePolledCount());
+      assertEquals(0, messages.getToBePolledCount());
 
       stopTaskAsync();
 
-      assertTrue(sleeper.awaitSleep(2000));
-      assertEquals(1, pubsubSourceTask.getPolledCount());
+
+      assertEquals(1, messages.getPolledCount());
       pubsubSourceTask.commitRecord(record);
       asyncCompletedLatch.await(2000, TimeUnit.MILLISECONDS);
       verify(subscriber).stopAsync();
-      assertEquals(0, pubsubSourceTask.getPolledCount());
+      assertEquals(0, messages.getPolledCount());
       assertTrue(ackSupplier.acked);
       assertFalse(ackSupplier.nacked);
       assertEquals(1, pubsubSourceTask.getMetrics().getAckCount());
@@ -141,8 +147,8 @@ public class PubsubSourceTaskTest {
    @Test public void testStopBeforeMessagePolled() throws InterruptedException {
       pubsubSourceTask.onPubsubMessageReceived(MESSAGE, ackSupplier);
 
-      assertEquals(1, pubsubSourceTask.getToBePolledCount());
-      assertEquals(0, pubsubSourceTask.getPolledCount());
+      assertEquals(1, messages.getToBePolledCount());
+      assertEquals(0, messages.getPolledCount());
 
       stopTaskAsync();
 
@@ -151,8 +157,8 @@ public class PubsubSourceTaskTest {
       //assertEquals(0, sleeper.sleptLatch.getCount());
       verify(subscriber).stopAsync();
 
-      assertEquals(0, pubsubSourceTask.getPolledCount());
-      assertEquals(0, pubsubSourceTask.getToBePolledCount());
+      assertEquals(0, messages.getPolledCount());
+      assertEquals(0, messages.getToBePolledCount());
       assertFalse(ackSupplier.acked);
       assertTrue(ackSupplier.nacked);
       assertEquals(0, pubsubSourceTask.getMetrics().getAckCount());
@@ -174,19 +180,4 @@ public class PubsubSourceTaskTest {
       }
    }
 
-   private static class TestSleeper implements PubsubSourceTask.Sleeper {
-      private final CountDownLatch sleptLatch = new CountDownLatch(1);
-
-      @Override public void sleep(long ms) {
-         sleptLatch.countDown();
-      }
-
-      public boolean awaitSleep(long ms) {
-         try {
-            return sleptLatch.await(ms, TimeUnit.MILLISECONDS);
-         } catch (InterruptedException e) {
-            throw new RuntimeException(e);
-         }
-      }
-   }
 }

@@ -1,4 +1,4 @@
-package com.videoplaza.dataflow.pubsub;
+package com.videoplaza.dataflow.pubsub.source.task;
 
 import com.google.protobuf.util.Timestamps;
 import com.google.pubsub.v1.PubsubMessage;

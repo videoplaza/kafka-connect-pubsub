@@ -20,7 +20,11 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.ReentrantLock;
 
 /**
- * TODO report metrics
+ * Asynchronously pulls Google Cloud Pub/Sub (https://cloud.google.com/pubsub/docs/pull#asynchronous-pull) subscription by utilizing {@link Subscriber} and implementing {@link SourceTask}.
+ * The way task responds to multiple events differs depending on the state task in and is encapsulated in instances of {@link PubsubSourceTaskStrategy}.
+ * A task starts with {@link RunningStrategy}, then upon {@link #stop()} request moves to {@link StoppingStrategy} and finally to {@link StoppedStrategy}
+ *
+ * TODO add metrics
  */
 public class PubsubSourceTask extends SourceTask implements PubsubSourceTaskState {
 
@@ -58,6 +62,7 @@ public class PubsubSourceTask extends SourceTask implements PubsubSourceTaskStat
           .setFlowControlSettings(config.getFlowControlSettings())
           .setMaxAckExtensionPeriod(config.getMaxAckExtensionPeriod())
           .setParallelPullCount(config.getParallelPullCount())
+          .setEndpoint(config.getEndpoint())
           .build();
 
       newSubscriber.addListener(new LoggingSubscriberListener(), Executors.newSingleThreadExecutor());

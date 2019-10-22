@@ -8,6 +8,9 @@ import org.slf4j.Logger;
 
 import java.util.concurrent.locks.ReentrantLock;
 
+/**
+ * A state shared by {@link PubsubSourceTaskStrategy} instances.
+ */
 public interface PubsubSourceTaskState {
 
    Logger getLogger();
@@ -26,6 +29,9 @@ public interface PubsubSourceTaskState {
 
    boolean isClean();
 
+   /**
+    * Collection of messages in flight.
+    */
    MessageMap getMessages();
 
    ReentrantLock getShutdownLock();

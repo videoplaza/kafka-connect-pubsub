@@ -28,9 +28,9 @@ public class MessageMap {
    private final Set<Message> toBePolled = ConcurrentHashMap.newKeySet();
    private final Consumer<Message> onEviction;
 
-   public MessageMap(long expireAfterWriteMs, Consumer<Message> onEviction) {
+   public MessageMap(long expireAfterWriteSec, Consumer<Message> onEviction) {
       this.cache = CacheBuilder.newBuilder()
-          .expireAfterWrite(expireAfterWriteMs, TimeUnit.SECONDS)
+          .expireAfterWrite(expireAfterWriteSec, TimeUnit.SECONDS)
           .removalListener(this::onMessageRemoval)
           .build();
       this.onEviction = onEviction;

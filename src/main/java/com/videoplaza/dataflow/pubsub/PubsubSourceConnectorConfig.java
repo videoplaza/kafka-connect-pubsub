@@ -2,6 +2,7 @@ package com.videoplaza.dataflow.pubsub;
 
 import com.google.api.gax.batching.FlowControlSettings;
 import com.google.api.gax.batching.FlowController;
+import com.google.cloud.pubsub.v1.stub.SubscriberStubSettings;
 import com.google.pubsub.v1.ProjectSubscriptionName;
 import org.apache.kafka.common.config.AbstractConfig;
 import org.apache.kafka.common.config.ConfigDef;
@@ -63,8 +64,8 @@ public class PubsubSourceConnectorConfig extends AbstractConfig {
     * See {@link com.google.cloud.pubsub.v1.Subscriber.Builder#setMaxAckExtensionPeriod(Duration)}
     */
    public static final String GCPS_MAX_ACK_EXTENSION_PERIOD_SEC_CONFIG = "max.ack.extension.period.sec";
-   private static final String GCPS_MAX_ACK_EXTENSION_PERIOD_SEC_DOC = "Maximum period in seconds a message ack deadline will be extended. Defaults to one hour. It is recommended to set this value to a reasonable upper bound of the subscriber time to process any message. A zero duration effectively disables auto deadline extensions. See https://googleapis.dev/java/google-cloud-clients/latest/com/google/cloud/pubsub/v1/Subscriber.Builder.html#setMaxAckExtensionPeriod-org.threeten.bp.Duration-";
-   public static final long GCPS_MAX_ACK_EXTENSION_PERIOD_SEC_DEFAULT = 3600L;
+   private static final String GCPS_MAX_ACK_EXTENSION_PERIOD_SEC_DOC = "Maximum period in seconds a message ack deadline will be extended. Defaults 5 minutes instead of 1 hour default in Google Cloud Pubs/Sub. It is recommended to set this value to a reasonable upper bound of the subscriber time to process any message. A zero duration effectively disables auto deadline extensions. See https://googleapis.dev/java/google-cloud-clients/latest/com/google/cloud/pubsub/v1/Subscriber.Builder.html#setMaxAckExtensionPeriod-org.threeten.bp.Duration-";
+   public static final long GCPS_MAX_ACK_EXTENSION_PERIOD_SEC_DEFAULT = 300L;
 
 
    public static final String CACHE_EXPIRATION_DEADLINE_SEC_CONFIG = "cache.expiration.deadline.sec";
@@ -85,6 +86,10 @@ public class PubsubSourceConnectorConfig extends AbstractConfig {
    public static final String NACK_MESSAGES_DURING_SHUTDOWN_CONFIG = "nack.messages.during.shutdown";
    private static final String NACK_MESSAGES_DURING_SHUTDOWN_DOC = "If true a message received from pubsub during shutdown will be nacked immediately, with subsequent redelivery. Minimizes delays cause by stopping the connector, but increases redelivery rates during shutdown";
    public static final boolean NACK_MESSAGES_DURING_SHUTDOWN_DEFAULT = false;
+
+   public static final String GCPS_ENDPOINT_CONFIG = "pubsub.endpoint";
+   private static final String GCPS_ENDPOINT_DOC = "Cloud Pub/Sub endpoint";
+   public static final String GCPS_ENDPOINT_DEFAULT = SubscriberStubSettings.getDefaultEndpoint();
 
    public static final ConfigDef CONFIG = configDef();
 
@@ -180,6 +185,12 @@ public class PubsubSourceConnectorConfig extends AbstractConfig {
           NACK_MESSAGES_DURING_SHUTDOWN_DEFAULT,
           Importance.LOW,
           NACK_MESSAGES_DURING_SHUTDOWN_DOC
+      ).define(
+          GCPS_ENDPOINT_CONFIG,
+          STRING,
+          GCPS_ENDPOINT_DEFAULT,
+          Importance.LOW,
+          GCPS_ENDPOINT_DOC
       );
    }
 
@@ -257,5 +268,9 @@ public class PubsubSourceConnectorConfig extends AbstractConfig {
 
    public long getTotalTerminationTimeoutMs() {
       return getSubscriberTerminationTimeoutMs() + getInflightAckTimeoutMs() + 2000;
+   }
+
+   public String getEndpoint() {
+      return getString(GCPS_ENDPOINT_CONFIG);
    }
 }

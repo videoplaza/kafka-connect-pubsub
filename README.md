@@ -27,7 +27,7 @@ Thus it is recommended to set the following connector level settings:
 - `max.ack.extension.period.sec` - max message ack deadline in pubsub
 - `cache.expiration.deadline.sec` - time to keep a message in internal message buffer for acknowledgement after delivery to kafka.
 Kafka producer settings (https://kafka.apache.org/documentation/#producerconfigs) in connect worker configs:
-- `producer.delivery.timeout.ms` - a deadline for message delivery to kafka (https://kafka.apache.org/documentation/#producerconfigs)
+- `producer.delivery.timeout.ms` - a deadline for message delivery to kafka
 
 The above settings should satisfy the following constraint: `producer.delivery.timeout.ms` < `cache.expiration.deadline.sec` < `max.ack.extension.period.sec`.  
 

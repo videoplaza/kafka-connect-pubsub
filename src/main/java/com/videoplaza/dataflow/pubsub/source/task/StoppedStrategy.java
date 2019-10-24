@@ -12,6 +12,10 @@ public class StoppedStrategy extends BaseStrategy {
       super(state);
    }
 
+   @Override public void init() {
+      metrics.unregisterMBean(log);
+   }
+
    @Override
    public void onNewMessageReceived(PubsubMessage pubsubMessage, AckReplyConsumer ackReplyConsumer, String messageKey) {
       log.error("Received a message after shutdown {}/{}. {}", pubsubMessage.getMessageId(), messageKey, state);

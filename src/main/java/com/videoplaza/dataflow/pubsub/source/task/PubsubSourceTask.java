@@ -15,6 +15,7 @@ import org.slf4j.LoggerFactory;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.ReentrantLock;
@@ -23,7 +24,7 @@ import java.util.concurrent.locks.ReentrantLock;
  * Asynchronously pulls Google Cloud Pub/Sub (https://cloud.google.com/pubsub/docs/pull#asynchronous-pull) subscription by utilizing {@link Subscriber} and implementing {@link SourceTask}.
  * The way task responds to multiple events differs depending on the state task in and is encapsulated in instances of {@link PubsubSourceTaskStrategy}.
  * A task starts with {@link RunningStrategy}, then upon {@link #stop()} request moves to {@link StoppingStrategy} and finally to {@link StoppedStrategy}
- *
+ * <p>
  * TODO add metrics
  */
 public class PubsubSourceTask extends SourceTask implements PubsubSourceTaskState {
@@ -32,10 +33,10 @@ public class PubsubSourceTask extends SourceTask implements PubsubSourceTaskStat
 
    private final int id = TASK_COUNT.incrementAndGet();
    private final Logger log = LoggerFactory.getLogger(PubsubSourceTask.class.getName() + "-" + id);
-   private final TaskMetrics metrics = new TaskMetrics();
+   private final TaskMetrics metrics = new TaskMetrics(id);
    private final boolean debugLoggingEnabled = log.isDebugEnabled();
    private final AtomicReference<PubsubSourceTaskStrategy> strategy = new AtomicReference<>();
-   private final ReentrantLock shutdownLock = new ReentrantLock();
+   private final ReentrantLock stopLock = new ReentrantLock();
 
    private volatile MessageMap messages;
 
@@ -112,7 +113,18 @@ public class PubsubSourceTask extends SourceTask implements PubsubSourceTaskStat
    }
 
    @Override public List<SourceRecord> poll() {
-      return strategy.get().poll();
+      try {
+         if (stopLock.tryLock(config.getPollTimeoutMs(), TimeUnit.MILLISECONDS)) {
+            try {
+               return strategy.get().poll();
+            } finally {
+               stopLock.unlock();
+            }
+         }
+      } catch (InterruptedException e) {
+         Thread.currentThread().interrupt();
+      }
+      return null;
    }
 
    @Override public void commit() throws InterruptedException {
@@ -125,7 +137,13 @@ public class PubsubSourceTask extends SourceTask implements PubsubSourceTaskStat
 
    @Override public void stop() {
       log.info("Stopping the task. {}", this);
-      strategy.get().stop();
+      stopLock.lock();
+      try {
+         strategy.get().stop();
+      } finally {
+         stopLock.unlock();
+      }
+      log.info("Stopped the task. {}", this);
    }
 
    @Override public Logger getLogger() {
@@ -156,11 +174,8 @@ public class PubsubSourceTask extends SourceTask implements PubsubSourceTaskStat
       return messages;
    }
 
-   @Override public ReentrantLock getShutdownLock() {
-      return shutdownLock;
-   }
-
    @Override public void moveTo(PubsubSourceTaskStrategy s) {
+      log.info("Moving {} -> {}", strategy.get(), s);
       strategy.set(s);
       s.init();
    }

@@ -22,8 +22,8 @@ public class MessageMapTest {
    private final MessageMap neverExpireMap = new MessageMap(Integer.MAX_VALUE, null);
    private final MessageMap mapWithExpiration = new MessageMap(1, evictionHandler);
    private final SourceRecord record = mock(SourceRecord.class);
-   private final Message message = new Message("1", record, mock(AckReplyConsumer.class), new TaskMetrics());
-   private final Message anotherMessage = new Message("2", mock(SourceRecord.class), mock(AckReplyConsumer.class), new TaskMetrics());
+   private final Message message = new Message("1", record, mock(AckReplyConsumer.class), new TaskMetrics(1));
+   private final Message anotherMessage = new Message("2", mock(SourceRecord.class), mock(AckReplyConsumer.class), new TaskMetrics(1));
 
    @Test public void pollEmpty() {
       assertTrue(neverExpireMap.poll().isEmpty());

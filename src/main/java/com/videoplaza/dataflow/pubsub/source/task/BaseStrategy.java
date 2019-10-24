@@ -62,4 +62,8 @@ public abstract class BaseStrategy implements PubsubSourceTaskStrategy {
 
       }
    }
+
+   @Override public String toString() {
+      return getClass().getSimpleName();
+   }
 }

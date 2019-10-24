@@ -230,7 +230,7 @@ public class PubsubSourceConnectorConfig extends AbstractConfig {
       return getLong(SHUTDOWN_INFLIGHT_ACK_TIMEOUT_MS_CONFIG);
    }
 
-   public long gePollTimeoutMs() {
+   public long getPollTimeoutMs() {
       return getLong(POLL_TIMEOUT_MS_CONFIG);
    }
 

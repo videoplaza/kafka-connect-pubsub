@@ -1,8 +1,18 @@
 package com.videoplaza.dataflow.pubsub.util;
 
+import org.apache.kafka.connect.errors.ConnectException;
+import org.slf4j.Logger;
+
+import javax.management.JMException;
+import javax.management.MBeanServer;
+import javax.management.MalformedObjectNameException;
+import javax.management.ObjectName;
+import java.lang.management.ManagementFactory;
 import java.util.concurrent.atomic.AtomicLong;
 
-public class TaskMetrics {
+public class TaskMetrics implements TaskMetricsMXBean {
+
+   private final ObjectName name;
    private final AtomicLong received = new AtomicLong();
    private final AtomicLong duplicates = new AtomicLong();
    private final AtomicLong acks = new AtomicLong();
@@ -10,10 +20,14 @@ public class TaskMetrics {
    private final AtomicLong ackLost = new AtomicLong();
    private final AtomicLong evicted = new AtomicLong();
 
+   public TaskMetrics(int taskId) {
+      name = metricName(taskId);
+   }
+
    /**
     * Total number of acknowledgments sent to Cloud Pubsub
     */
-   public long getAckCount() {
+   @Override public long getAckCount() {
       return acks.get();
    }
 
@@ -21,30 +35,30 @@ public class TaskMetrics {
     * Total number of negative acknowledgments sent to Cloud Pubsub.
     * Might occur during connector shutdown.
     */
-   public long getNackCount() {
+   @Override public long getNackCount() {
       return nacks.get();
    }
 
    /**
     * Total number of messages received from Cloud Pubsub
     */
-   public long getReceivedCount() {
+   @Override public long getReceivedCount() {
       return received.get();
    }
 
-   public long getAckLostCount() {
+   @Override public long getAckLostCount() {
       return ackLost.get();
    }
 
-   public long getEvictedCount() {
+   @Override public long getEvictedCount() {
       return evicted.get();
    }
 
-   public long getDuplicatesCount() {
+   @Override public long getDuplicatesCount() {
       return duplicates.get();
    }
 
-   public long getCountersMismatch() {
+   @Override public long getCountersMismatch() {
       return received.get() - acks.get() - nacks.get();
    }
 
@@ -83,4 +97,36 @@ public class TaskMetrics {
    public void onEvicted() {
       evicted.incrementAndGet();
    }
+
+   public synchronized void registerMBean(Logger logger) {
+      try {
+         final MBeanServer mBeanServer = ManagementFactory.getPlatformMBeanServer();
+         mBeanServer.registerMBean(this, name);
+         logger.info("Registered task metrics '{}'", name);
+      } catch (JMException e) {
+         logger.warn("Error while register the MBean '{}': {}", name, e.getMessage());
+      }
+   }
+
+   public final void unregisterMBean(Logger logger) {
+      if (this.name != null) {
+         try {
+            final MBeanServer mBeanServer = ManagementFactory.getPlatformMBeanServer();
+            mBeanServer.unregisterMBean(name);
+            logger.info("Unregistered task metrics '{}'", name);
+         } catch (JMException e) {
+            logger.error("Unable to unregister the MBean '{}'", name);
+         }
+      }
+   }
+
+   public ObjectName metricName(int taskId) {
+      final String metricName = "com.videoplaza.pubsub:type=connector-metrics,taskid=" + taskId;
+      try {
+         return new ObjectName(metricName);
+      } catch (MalformedObjectNameException e) {
+         throw new ConnectException("Invalid metric name '" + metricName + "'");
+      }
+   }
+
 }

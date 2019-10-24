@@ -20,7 +20,11 @@ public class RunningStrategy extends BaseStrategy {
 
    public RunningStrategy(PubsubSourceTaskState state) {
       super(state);
-      pollTimeoutMs = state.getConfig().gePollTimeoutMs();
+      pollTimeoutMs = state.getConfig().getPollTimeoutMs();
+   }
+
+   @Override public void init() {
+      metrics.registerMBean(log);
    }
 
    @Override
@@ -42,42 +46,30 @@ public class RunningStrategy extends BaseStrategy {
    }
 
    @Override public List<SourceRecord> poll() {
-      long timeWaited = waitForMessagesToPoll();
+      long start = System.nanoTime();
       try {
-         if (state.getShutdownLock().tryLock(pollTimeoutMs, TimeUnit.MILLISECONDS)) {
-            try {
-               List<SourceRecord> records = messages.poll();
-               log.trace("Returning {} records after waiting for {}ms. {}", records.size(), timeWaited, state);
-               return records.isEmpty() ? null : records;
-            } finally {
-               state.getShutdownLock().unlock();
-            }
-         } else {
-            log.info("Could not obtain lock in {}ms. Will try later.", pollTimeoutMs);
-            return null;
-         }
+         waitForMessagesToPoll(start);
+         List<SourceRecord> records = messages.poll();
+         log.trace("Returning {} records in {}ms. {}", records.size(), msSince(start), state);
+         return records.isEmpty() ? null : records;
       } catch (InterruptedException e) {
-         log.info("Poll was interrupted");
+         log.warn("Poll was interrupted");
          Thread.currentThread().interrupt();
-         return null;
       }
+      return null;
    }
 
    /**
     * Waits for new messages to minimize CPU consumption.
     */
-   private long waitForMessagesToPoll() {
-      long start = System.nanoTime();
+   private void waitForMessagesToPoll(long start) throws InterruptedException {
       receiveLock.lock();
       try {
          boolean received = recordsReceived.await(pollTimeoutMs, TimeUnit.MILLISECONDS);
          log.trace("Received={}, in {}ms", received, msSince(start));
-      } catch (InterruptedException e) {
-         Thread.currentThread().interrupt();
       } finally {
          receiveLock.unlock();
       }
-      return msSince(start);
    }
 
    @Override public void commit() {

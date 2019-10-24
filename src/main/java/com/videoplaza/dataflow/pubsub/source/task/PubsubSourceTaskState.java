@@ -34,5 +34,4 @@ public interface PubsubSourceTaskState {
     */
    MessageMap getMessages();
 
-   ReentrantLock getShutdownLock();
 }

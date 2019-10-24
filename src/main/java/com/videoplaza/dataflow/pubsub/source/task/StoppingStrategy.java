@@ -75,7 +75,6 @@ public class StoppingStrategy extends BaseStrategy {
     * {@link PubsubSourceConnectorConfig#SHUTDOWN_TERMINATE_SUBSCRIBER_TIMEOUT_MS_CONFIG}.
     */
    private void shutdown() {
-      state.getShutdownLock().lock();
       try {
          long start = System.nanoTime();
 
@@ -88,7 +87,6 @@ public class StoppingStrategy extends BaseStrategy {
             log.info("Task is shutdown in {}ms. {}", msSince(start), state);
          }
       } finally {
-         state.getShutdownLock().unlock();
          complete.countDown();
          state.moveTo(new StoppedStrategy(state));
       }

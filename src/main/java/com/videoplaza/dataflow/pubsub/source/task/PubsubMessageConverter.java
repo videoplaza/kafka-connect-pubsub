@@ -1,4 +1,4 @@
-package com.videoplaza.dataflow.pubsub;
+package com.videoplaza.dataflow.pubsub.source.task;
 
 import com.google.protobuf.util.Timestamps;
 import com.google.pubsub.v1.PubsubMessage;
@@ -31,7 +31,6 @@ public class PubsubMessageConverter {
    private final String subscription;
 
    private final String topic;
-
 
    //TODO make a builder
    public PubsubMessageConverter(String keyAttribute, String timestampAttribute, String subscription, String topic) {

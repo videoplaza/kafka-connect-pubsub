@@ -27,7 +27,7 @@ public class PubsubSourceConnectorConfigTest {
 
    @Test public void testMaxAckExtensionPeriod() {
       assertEquals("Default value",
-          Duration.ofHours(1),
+          Duration.ofMinutes(5),
           requiredOnlyConfig.getMaxAckExtensionPeriod()
       );
 

@@ -2,6 +2,7 @@ package com.videoplaza.dataflow.pubsub;
 
 import com.google.api.gax.batching.FlowControlSettings;
 import com.google.api.gax.batching.FlowController;
+import com.google.cloud.pubsub.v1.stub.SubscriberStubSettings;
 import com.google.pubsub.v1.ProjectSubscriptionName;
 import org.apache.kafka.common.config.AbstractConfig;
 import org.apache.kafka.common.config.ConfigDef;
@@ -10,6 +11,7 @@ import org.threeten.bp.Duration;
 
 import java.util.Map;
 
+import static org.apache.kafka.common.config.ConfigDef.Type.BOOLEAN;
 import static org.apache.kafka.common.config.ConfigDef.Type.INT;
 import static org.apache.kafka.common.config.ConfigDef.Type.LONG;
 import static org.apache.kafka.common.config.ConfigDef.Type.STRING;
@@ -26,47 +28,68 @@ public class PubsubSourceConnectorConfig extends AbstractConfig {
 
    public static final String GCPS_KEY_ATTRIBUTE_CONFIG = "key.attribute";
    private static final String GCPS_KEY_ATTRIBUTE_DOC = "The Cloud Pub/Sub message attribute to use as a key for messages published to Kafka.";
-   static final String GCPS_KEY_ATTRIBUTE_DEFAULT = "";
+   public static final String GCPS_KEY_ATTRIBUTE_DEFAULT = "";
 
    public static final String GCPS_TIMESTAMP_ATTRIBUTE_CONFIG = "timestamp.attribute";
    private static final String GCPS_TIMESTAMP_ATTRIBUTE_DOC = "The Cloud Pub/Sub message attribute to use as a timestamp for messages published to Kafka.";
-   static final String GCPS_TIMESTAMP_ATTRIBUTE_DEFAULT = "";
+   public static final String GCPS_TIMESTAMP_ATTRIBUTE_DEFAULT = "";
 
    /**
     * See {@link FlowControlSettings.Builder#getMaxOutstandingElementCount()}
     */
    public static final String GCPS_MAX_OUTSTANDING_ELEMENTS_CONFIG = "flow.control.max.outstanding.elements";
    private static final String GCPS_MAX_OUTSTANDING_ELEMENTS_DOC = "Maximum number of outstanding pubsub messages to keep in memory before enforcing flow control. See https://cloud.google.com/pubsub/docs/pull#message-flow-control";
-   static final Long GCPS_MAX_OUTSTANDING_ELEMENTS_DEFAULT = 1_000_000L;
+   public static final Long GCPS_MAX_OUTSTANDING_ELEMENTS_DEFAULT = 10_000L;
 
    /**
     * See {@link FlowControlSettings.Builder#getMaxOutstandingRequestBytes()}
     */
    public static final String GCPS_MAX_OUTSTANDING_BYTES_CONFIG = "flow.control.max.outstanding.bytes";
    private static final String GCPS_MAX_OUTSTANDING_BYTES_DOC = "Maximum number of outstanding bytes to keep in memory before enforcing flow control. See https://cloud.google.com/pubsub/docs/pull#message-flow-control";
-   static final Long GCPS_MAX_OUTSTANDING_BYTES_DEFAULT = 1_000_000_000L;
+   public static final Long GCPS_MAX_OUTSTANDING_BYTES_DEFAULT = 1_000_000_000L;
 
-   public static final String GCPS_SHUTDOWN_TIMEOUT_MS_CONFIG = "shutdown.timeout.ms";
-   private static final String GCPS_SHUTDOWN_TIMEOUT_MS_DOC = "Time in ms to wait for all read messages being acknowledged and terminate pubsub subscriber during shutdown.";
-   static final Long GCPS_SHUTDOWN_TIMEOUT_MS_DEFAULT = 5_000L;
+   public static final String SHUTDOWN_INFLIGHT_ACK_TIMEOUT_MS_CONFIG = "shutdown.inflight.ack.timeout.ms";
+   private static final String SHUTDOWN_INFLIGHT_ACK_TIMEOUT_MS_DOC = "Time in milliseconds to wait for all messages that have already been polled by kafka connect framework to be acknowledged during shutdown.";
+   public static final Long SHUTDOWN_INFLIGHT_ACK_TIMEOUT_MS_DEFAULT = 3_000L;
+
+   public static final String SHUTDOWN_TERMINATE_SUBSCRIBER_TIMEOUT_MS_CONFIG = "shutdown.terminate.subscriber.timeout.ms";
+   private static final String SHUTDOWN_TERMINATE_SUBSCRIBER_TIMEOUT_MS_DOC = "Time in milliseconds to wait for Cloud Pub/Sub subscriber to terminate during shutdown.";
+   public static final Long SHUTDOWN_TERMINATE_SUBSCRIBER_TIMEOUT_MS_DEFAULT = 6_000L;
 
    public static final String POLL_TIMEOUT_MS_CONFIG = "poll.timeout.ms";
-   private static final String POLL_TIMEOUT_MS_DOC = "Time in ms to wait for messages to be read from pubsub before returning from poll method.";
-   static final Long POLL_TIMEOUT_MS_DEFAULT = 100L;
+   private static final String POLL_TIMEOUT_MS_DOC = "Time in milliseconds to wait for messages to be read from pubsub before returning from poll method.";
+   public static final Long POLL_TIMEOUT_MS_DEFAULT = 100L;
 
    /**
     * See {@link com.google.cloud.pubsub.v1.Subscriber.Builder#setMaxAckExtensionPeriod(Duration)}
     */
    public static final String GCPS_MAX_ACK_EXTENSION_PERIOD_SEC_CONFIG = "max.ack.extension.period.sec";
-   private static final String GCPS_MAX_ACK_EXTENSION_PERIOD_SEC_DOC = "Maximum period in seconds a message ack deadline will be extended. Defaults to one hour. It is recommended to set this value to a reasonable upper bound of the subscriber time to process any message. A zero duration effectively disables auto deadline extensions. See https://googleapis.dev/java/google-cloud-clients/latest/com/google/cloud/pubsub/v1/Subscriber.Builder.html#setMaxAckExtensionPeriod-org.threeten.bp.Duration-";
-   static final int GCPS_MAX_ACK_EXTENSION_PERIOD_SEC_DEFAULT = 3600;
+   private static final String GCPS_MAX_ACK_EXTENSION_PERIOD_SEC_DOC = "Maximum period in seconds a message ack deadline will be extended. Defaults 5 minutes instead of 1 hour default in Google Cloud Pubs/Sub. It is recommended to set this value to a reasonable upper bound of the subscriber time to process any message. A zero duration effectively disables auto deadline extensions. See https://googleapis.dev/java/google-cloud-clients/latest/com/google/cloud/pubsub/v1/Subscriber.Builder.html#setMaxAckExtensionPeriod-org.threeten.bp.Duration-";
+   public static final long GCPS_MAX_ACK_EXTENSION_PERIOD_SEC_DEFAULT = 300L;
+
+
+   public static final String CACHE_EXPIRATION_DEADLINE_SEC_CONFIG = "cache.expiration.deadline.sec";
+   private static final String CACHE_EXPIRATION_DEADLINE_SEC_DOC = "Maximum period in seconds a message is kept in internal cache if not delivered to kafka. Messages with same ids are considered duplicates and discarded. This should be greater than `delivery.timeout.ms` setting for kafka producer and less than `max.ack.extension.period.sec` in Cloud Pub/Sub";
+   public static final long CACHE_EXPIRATION_DEADLINE_SEC_DEFAULT = GCPS_MAX_ACK_EXTENSION_PERIOD_SEC_DEFAULT - 10;
 
    /**
     * See {@link com.google.cloud.pubsub.v1.Subscriber.Builder#setParallelPullCount(int)}
     */
    public static final String GCPS_PARALLEL_PULL_COUNT_CONFIG = "parallel.pull.count";
    private static final String GCPS_PARALLEL_PULL_COUNT_DOC = "Number of pullers used to pull messages from the subscription. Defaults to one. See https://googleapis.dev/java/google-cloud-clients/latest/com/google/cloud/pubsub/v1/Subscriber.Builder.html#setParallelPullCount-int-";
-   static final int GCPS_PARALLEL_PULL_COUNT_DEFAULT = 1;
+   public static final int GCPS_PARALLEL_PULL_COUNT_DEFAULT = 1;
+
+   public static final String DEBUG_LOG_SPARSITY_CONFIG = "debug.log.sparsity";
+   private static final String DEBUG_LOG_SPARSITY_DOC = "Number of messages to skip per single log line. Does have any effect if debug logging is disabled";
+   public static final int DEBUG_LOG_SPARSITY_DEFAULT = 1;
+
+   public static final String NACK_MESSAGES_DURING_SHUTDOWN_CONFIG = "nack.messages.during.shutdown";
+   private static final String NACK_MESSAGES_DURING_SHUTDOWN_DOC = "If true a message received from pubsub during shutdown will be nacked immediately, with subsequent redelivery. Minimizes delays cause by stopping the connector, but increases redelivery rates during shutdown";
+   public static final boolean NACK_MESSAGES_DURING_SHUTDOWN_DEFAULT = false;
+
+   public static final String GCPS_ENDPOINT_CONFIG = "pubsub.endpoint";
+   private static final String GCPS_ENDPOINT_DOC = "Cloud Pub/Sub endpoint";
+   public static final String GCPS_ENDPOINT_DEFAULT = SubscriberStubSettings.getDefaultEndpoint();
 
    public static final ConfigDef CONFIG = configDef();
 
@@ -106,20 +129,26 @@ public class PubsubSourceConnectorConfig extends AbstractConfig {
           GCPS_MAX_OUTSTANDING_ELEMENTS_CONFIG,
           LONG,
           GCPS_MAX_OUTSTANDING_ELEMENTS_DEFAULT,
-          Importance.LOW,
+          Importance.MEDIUM,
           GCPS_MAX_OUTSTANDING_ELEMENTS_DOC
       ).define(
           GCPS_MAX_OUTSTANDING_BYTES_CONFIG,
           LONG,
           GCPS_MAX_OUTSTANDING_BYTES_DEFAULT,
-          Importance.LOW,
+          Importance.MEDIUM,
           GCPS_MAX_OUTSTANDING_BYTES_DOC
       ).define(
-          GCPS_SHUTDOWN_TIMEOUT_MS_CONFIG,
+          SHUTDOWN_TERMINATE_SUBSCRIBER_TIMEOUT_MS_CONFIG,
           LONG,
-          GCPS_SHUTDOWN_TIMEOUT_MS_DEFAULT,
+          SHUTDOWN_TERMINATE_SUBSCRIBER_TIMEOUT_MS_DEFAULT,
           Importance.LOW,
-          GCPS_SHUTDOWN_TIMEOUT_MS_DOC
+          SHUTDOWN_TERMINATE_SUBSCRIBER_TIMEOUT_MS_DOC
+      ).define(
+          SHUTDOWN_INFLIGHT_ACK_TIMEOUT_MS_CONFIG,
+          LONG,
+          SHUTDOWN_INFLIGHT_ACK_TIMEOUT_MS_DEFAULT,
+          Importance.LOW,
+          SHUTDOWN_INFLIGHT_ACK_TIMEOUT_MS_DOC
       ).define(
           POLL_TIMEOUT_MS_CONFIG,
           LONG,
@@ -130,7 +159,7 @@ public class PubsubSourceConnectorConfig extends AbstractConfig {
           GCPS_MAX_ACK_EXTENSION_PERIOD_SEC_CONFIG,
           LONG,
           GCPS_MAX_ACK_EXTENSION_PERIOD_SEC_DEFAULT,
-          Importance.MEDIUM,
+          Importance.HIGH,
           GCPS_MAX_ACK_EXTENSION_PERIOD_SEC_DOC
       ).define(
           GCPS_PARALLEL_PULL_COUNT_CONFIG,
@@ -138,6 +167,30 @@ public class PubsubSourceConnectorConfig extends AbstractConfig {
           GCPS_PARALLEL_PULL_COUNT_DEFAULT,
           Importance.LOW,
           GCPS_PARALLEL_PULL_COUNT_DOC
+      ).define(
+          CACHE_EXPIRATION_DEADLINE_SEC_CONFIG,
+          LONG,
+          CACHE_EXPIRATION_DEADLINE_SEC_DEFAULT,
+          Importance.HIGH,
+          CACHE_EXPIRATION_DEADLINE_SEC_DOC
+      ).define(
+          DEBUG_LOG_SPARSITY_CONFIG,
+          INT,
+          DEBUG_LOG_SPARSITY_DEFAULT,
+          Importance.LOW,
+          DEBUG_LOG_SPARSITY_DOC
+      ).define(
+          NACK_MESSAGES_DURING_SHUTDOWN_CONFIG,
+          BOOLEAN,
+          NACK_MESSAGES_DURING_SHUTDOWN_DEFAULT,
+          Importance.LOW,
+          NACK_MESSAGES_DURING_SHUTDOWN_DOC
+      ).define(
+          GCPS_ENDPOINT_CONFIG,
+          STRING,
+          GCPS_ENDPOINT_DEFAULT,
+          Importance.LOW,
+          GCPS_ENDPOINT_DOC
       );
    }
 
@@ -169,8 +222,12 @@ public class PubsubSourceConnectorConfig extends AbstractConfig {
       return getLong(GCPS_MAX_OUTSTANDING_BYTES_CONFIG);
    }
 
-   public long getTerminationTimeoutMs() {
-      return getLong(GCPS_SHUTDOWN_TIMEOUT_MS_CONFIG);
+   public long getSubscriberTerminationTimeoutMs() {
+      return getLong(SHUTDOWN_TERMINATE_SUBSCRIBER_TIMEOUT_MS_CONFIG);
+   }
+
+   public long getInflightAckTimeoutMs() {
+      return getLong(SHUTDOWN_INFLIGHT_ACK_TIMEOUT_MS_CONFIG);
    }
 
    public long gePollTimeoutMs() {
@@ -193,8 +250,27 @@ public class PubsubSourceConnectorConfig extends AbstractConfig {
       return Duration.ofSeconds(getLong(GCPS_MAX_ACK_EXTENSION_PERIOD_SEC_CONFIG));
    }
 
+   public long getCacheExpirationDeadlineSeconds() {
+      return getLong(CACHE_EXPIRATION_DEADLINE_SEC_CONFIG);
+   }
+
+   public int getDebugLogSparsity() {
+      return getInt(DEBUG_LOG_SPARSITY_CONFIG);
+   }
+
    public int getParallelPullCount() {
       return getInt(GCPS_PARALLEL_PULL_COUNT_CONFIG);
    }
 
+   public boolean shouldNackMessagesDuringShutdown() {
+      return getBoolean(NACK_MESSAGES_DURING_SHUTDOWN_CONFIG);
+   }
+
+   public long getTotalTerminationTimeoutMs() {
+      return getSubscriberTerminationTimeoutMs() + getInflightAckTimeoutMs() + 2000;
+   }
+
+   public String getEndpoint() {
+      return getString(GCPS_ENDPOINT_CONFIG);
+   }
 }

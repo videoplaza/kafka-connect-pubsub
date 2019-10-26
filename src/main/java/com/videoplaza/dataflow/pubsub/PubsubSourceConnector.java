@@ -1,5 +1,6 @@
 package com.videoplaza.dataflow.pubsub;
 
+import com.videoplaza.dataflow.pubsub.source.task.PubsubSourceTask;
 import org.apache.kafka.common.config.ConfigDef;
 import org.apache.kafka.connect.connector.Task;
 import org.apache.kafka.connect.source.SourceConnector;

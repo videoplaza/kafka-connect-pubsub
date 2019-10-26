@@ -1,33 +1,47 @@
-package com.videoplaza.dataflow.pubsub;
+package com.videoplaza.dataflow.pubsub.source.task;
 
 import com.google.cloud.pubsub.v1.AckReplyConsumer;
-import org.slf4j.Logger;
+import com.videoplaza.dataflow.pubsub.util.TaskMetrics;
+import org.apache.kafka.connect.source.SourceRecord;
 
 import java.util.Objects;
+
+import static java.lang.System.currentTimeMillis;
 
 /**
  * Encapsulates Pubsub message and corresponding <code>AckReplyConsumer</code> instance.
  */
-public class MessageInFlight {
+public class Message {
    private final String messageId;
    private final AckReplyConsumer ackReplyConsumer;
    private final TaskMetrics metrics;
-   private final Logger log;
-   private volatile boolean polled = false;
 
-   public MessageInFlight(String messageId, AckReplyConsumer ackReplyConsumer, TaskMetrics metrics, Logger log) {
+   private volatile boolean polled = false;
+   private final long createdTimestamp;
+   private final SourceRecord record;
+
+   public Message(String messageId, SourceRecord record, AckReplyConsumer ackReplyConsumer, TaskMetrics metrics) {
       Objects.requireNonNull(messageId, "messageId cannot be null");
+      Objects.requireNonNull(record, "record cannot be null");
       Objects.requireNonNull(ackReplyConsumer, "ackReplyConsumer cannot be null");
       Objects.requireNonNull(metrics, "metrics cannot be null");
-      Objects.requireNonNull(log, "log cannot be null");
       this.messageId = messageId;
+      this.record = record;
       this.ackReplyConsumer = ackReplyConsumer;
       this.metrics = metrics;
-      this.log = log;
+      this.createdTimestamp = currentTimeMillis();
    }
 
    public String getMessageId() {
       return messageId;
+   }
+
+   public String getMessageKey() {
+      return record.key().toString();
+   }
+
+   public SourceRecord getRecord() {
+      return record;
    }
 
    public boolean isPolled() {
@@ -42,15 +56,13 @@ public class MessageInFlight {
       if (ack) {
          ackReplyConsumer.ack();
          metrics.onAck();
-         log.trace("Acked {}", getMessageId());
       } else {
          ackReplyConsumer.nack();
          metrics.onNack();
-         log.trace("Nacked {}", getMessageId());
       }
    }
 
    @Override public String toString() {
-      return "MessageInFlight[" + getMessageId() + '/' + polled + ']';
+      return "MessageInFlight[" + messageId + '/' + getMessageKey() + '/' + polled + '|' + (currentTimeMillis() - createdTimestamp) + "ms]";
    }
 }

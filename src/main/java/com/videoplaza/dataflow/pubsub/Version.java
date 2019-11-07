@@ -10,7 +10,8 @@ public class Version {
    private static final Logger LOG = LoggerFactory.getLogger(Version.class);
    private static final String VERSION;
 
-   private Version() {}
+   private Version() {
+   }
 
    static {
       Properties props = new Properties();

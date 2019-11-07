@@ -4,6 +4,7 @@ import com.google.api.gax.batching.FlowControlSettings;
 import com.google.api.gax.batching.FlowController;
 import com.google.cloud.pubsub.v1.stub.SubscriberStubSettings;
 import com.google.pubsub.v1.ProjectSubscriptionName;
+import com.videoplaza.dataflow.pubsub.source.task.convert.PubsubAttributeExtractor;
 import org.apache.kafka.common.config.AbstractConfig;
 import org.apache.kafka.common.config.ConfigDef;
 import org.apache.kafka.common.config.ConfigDef.Importance;
@@ -33,6 +34,15 @@ public class PubsubSourceConnectorConfig extends AbstractConfig {
    public static final String GCPS_TIMESTAMP_ATTRIBUTE_CONFIG = "timestamp.attribute";
    private static final String GCPS_TIMESTAMP_ATTRIBUTE_DOC = "The Cloud Pub/Sub message attribute to use as a timestamp for messages published to Kafka.";
    public static final String GCPS_TIMESTAMP_ATTRIBUTE_DEFAULT = "";
+
+   public static final String GCPS_BATCH_TYPE_ATTRIBUTE_CONFIG = "batch.type.attribute";
+   private static final String GCPS_BATCH_TYPE_ATTRIBUTE_DOC = "The Cloud Pub/Sub message attribute to use to indicate message batching mode. Batching currently supports only 1 value `avro`.";
+   public static final String GCPS_BATCH_TYPE_ATTRIBUTE_DEFAULT = "batch.type";
+   public static final String AVRO_BATCH_TYPE = "avro";
+
+   public static final String MAX_NUMBER_CONVERSION_FAILURES_CONFIG = "max.conversion.failures";
+   private static final String MAX_NUMBER_CONVERSION_FAILURES_DOC = "Maximum number of conversion failures to ignore. ";
+   public static final long MAX_NUMBER_CONVERSION_FAILURES_DEFAULT = 0;
 
    /**
     * See {@link FlowControlSettings.Builder#getMaxOutstandingElementCount()}
@@ -90,6 +100,10 @@ public class PubsubSourceConnectorConfig extends AbstractConfig {
    public static final String GCPS_ENDPOINT_CONFIG = "pubsub.endpoint";
    private static final String GCPS_ENDPOINT_DOC = "Cloud Pub/Sub endpoint";
    public static final String GCPS_ENDPOINT_DEFAULT = SubscriberStubSettings.getDefaultEndpoint();
+
+   public static final String HISTOGRAM_UPDATE_INTERVAL_MS_CONFIG = "histogram.update.interval.ms";
+   private static final String HISTOGRAM_UPDATE_INTERVAL_MS_DOC = "Histogram data collection interval in milliseconds.";
+   public static final Long HISTOGRAM_UPDATE_INTERVAL_MS_DEFAULT = 10_000L;
 
    public static final ConfigDef CONFIG = configDef();
 
@@ -191,6 +205,24 @@ public class PubsubSourceConnectorConfig extends AbstractConfig {
           GCPS_ENDPOINT_DEFAULT,
           Importance.LOW,
           GCPS_ENDPOINT_DOC
+      ).define(
+          GCPS_BATCH_TYPE_ATTRIBUTE_CONFIG,
+          STRING,
+          GCPS_BATCH_TYPE_ATTRIBUTE_DEFAULT,
+          Importance.LOW,
+          GCPS_BATCH_TYPE_ATTRIBUTE_DOC
+      ).define(
+          MAX_NUMBER_CONVERSION_FAILURES_CONFIG,
+          LONG,
+          MAX_NUMBER_CONVERSION_FAILURES_DEFAULT,
+          Importance.LOW,
+          MAX_NUMBER_CONVERSION_FAILURES_DOC
+      ).define(
+          HISTOGRAM_UPDATE_INTERVAL_MS_CONFIG,
+          LONG,
+          HISTOGRAM_UPDATE_INTERVAL_MS_DEFAULT,
+          Importance.HIGH,
+          HISTOGRAM_UPDATE_INTERVAL_MS_DOC
       );
    }
 
@@ -272,5 +304,21 @@ public class PubsubSourceConnectorConfig extends AbstractConfig {
 
    public String getEndpoint() {
       return getString(GCPS_ENDPOINT_CONFIG);
+   }
+
+   public String getBatchAttribute() {
+      return getString(GCPS_BATCH_TYPE_ATTRIBUTE_CONFIG);
+   }
+
+   public PubsubAttributeExtractor getPubsubAttributeExtractor() {
+      return new PubsubAttributeExtractor(getKeyAttribute(), getTimestampAttribute());
+   }
+
+   public long getHistogramUpdateIntervalMs() {
+      return getLong(HISTOGRAM_UPDATE_INTERVAL_MS_CONFIG);
+   }
+
+   public long getMaxNumberOfConversionFailures() {
+      return getLong(MAX_NUMBER_CONVERSION_FAILURES_CONFIG);
    }
 }

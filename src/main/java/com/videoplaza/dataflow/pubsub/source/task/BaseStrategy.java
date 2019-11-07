@@ -1,66 +1,47 @@
 package com.videoplaza.dataflow.pubsub.source.task;
 
 import com.google.pubsub.v1.PubsubMessage;
-import com.videoplaza.dataflow.pubsub.util.TaskMetrics;
+import com.videoplaza.dataflow.pubsub.source.task.convert.PubsubAttributeExtractor;
+import com.videoplaza.dataflow.pubsub.util.PubsubSourceTaskLogger;
 import org.apache.kafka.connect.source.SourceRecord;
-import org.slf4j.Logger;
 
 public abstract class BaseStrategy implements PubsubSourceTaskStrategy {
 
    private final String subscription;
    final PubsubSourceTaskState state;
-   final Logger log;
-   final MessageMap messages;
-   final TaskMetrics metrics;
+   final SourceMessageMap messages;
+   final PubsubAttributeExtractor attributeExtractor;
+   final PubsubSourceTaskLogger logger;
 
    public BaseStrategy(PubsubSourceTaskState state) {
       this.state = state;
-      log = state.getLogger();
+      logger = state.getLogger();
       messages = state.getMessages();
-      metrics = state.getMetrics();
-      subscription  = state.getConfig().getSubscription();
+      subscription = state.getConfig().getSubscription();
+      attributeExtractor = state.getConfig().getPubsubAttributeExtractor();
    }
 
-   @Override public void init() {}
-
-   @Override public void onDuplicateReceived(PubsubMessage pubsubMessage, String messageKey, Message current) {
-      state.getMetrics().onDuplicate();
-
-      if (isDebugEnabled(messageKey)) {
-         log.debug("A duplicate for {} received: [{}/{}]. {}.", current, messageKey, state.getConverter().getTimestamp(pubsubMessage), state);
-      }
+   @Override public void init() {
    }
 
-   boolean isDebugEnabled(String messageKey) {
-      return state.isDebugEnabled(messageKey);
+   @Override public void onDuplicateReceived(PubsubMessage pubsubMessage, SourceMessage current) {
    }
 
-   @Override public void commitRecord(SourceRecord record) {
-      commitRecord(record, true);
-   }
-
-   void commitRecord(SourceRecord record, boolean ack) {
+   @Override public SourceMessage commitRecord(SourceRecord record) {
       String messageId = (String) record.sourceOffset().get(subscription);
-      Message message = messages.get(messageId);
-      if (message != null) {
-         message.ack(ack);
-         messages.remove(messageId);
-
-         if (isDebugEnabled(record.key().toString())) {
-            log.debug("{} {}. {}", ack ? "Acked" : "Nacked", message, state);
+      SourceMessage sourceMessage = messages.get(messageId);
+      if (sourceMessage != null) {
+         boolean allRecordsAcked = sourceMessage.ack(record);
+         state.getMetrics().onRecordAck(sourceMessage.getReceivedMs()); //TODO move to the task?
+         if (allRecordsAcked) {
+            messages.remove(messageId);
+            state.getMetrics().onMessageAck(sourceMessage.getReceivedMs());
+            return sourceMessage;
          }
       } else {
-         metrics.onAckLost();
-
-         log.warn("Nothing to ack[{}] for {}/{}. So far: {}. Debug enabled: {}.",
-             ack,
-             messageId,
-             record.key(),
-             metrics.getAckLostCount(),
-             (isDebugEnabled(record.key() == null ? messageId : record.key().toString()))
-         );
-
+         state.getMetrics().onRecordAckLost();
       }
+      return null;
    }
 
    @Override public String toString() {

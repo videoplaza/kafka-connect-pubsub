@@ -24,36 +24,49 @@ public class RunningStrategy extends BaseStrategy {
    }
 
    @Override public void init() {
-      metrics.registerMBean(log);
+      state.getJmxReporter().start();
    }
 
    @Override
-   public void onNewMessageReceived(PubsubMessage pubsubMessage, AckReplyConsumer ackReplyConsumer, String messageKey) {
-      if (isDebugEnabled(messageKey)) {
-         log.debug("Received {}/{}. {}", pubsubMessage.getMessageId(), messageKey, state);
-      }
+   public SourceMessage onNewMessageReceived(PubsubMessage pubsubMessage, AckReplyConsumer ackReplyConsumer) {
 
-      messages.put(new Message(pubsubMessage.getMessageId(), state.getConverter().convert(pubsubMessage), ackReplyConsumer, metrics));
-
-      metrics.onReceived();
-
-      receiveLock.lock();
       try {
-         recordsReceived.signalAll();
-      } finally {
-         receiveLock.unlock();
+         SourceMessage m = state.getConverter().convert(pubsubMessage, ackReplyConsumer);
+         messages.put(m);
+         state.getMetrics().onMessageReceived(m.getCreatedMs(), m.size());
+         receiveLock.lock();
+         try {
+            recordsReceived.signalAll();
+         } finally {
+            receiveLock.unlock();
+         }
+         return m;
+      } catch (RuntimeException e) {
+         state.getMetrics().onMessageConversionFailure();
+         if (shouldAckAndIgnoreFailedConversion()) {
+            ackReplyConsumer.ack();
+            logger.warn("Failed to convert a message. Acked and ignored. {}", pubsubMessage);
+         } else {
+            logger.error("Failed to convert a message. {} ", pubsubMessage);
+            throw e;
+         }
       }
+      return null;
+   }
+
+   boolean shouldAckAndIgnoreFailedConversion() {
+      return state.getMetrics().getMessageConversionFailures() <= state.getConfig().getMaxNumberOfConversionFailures();
    }
 
    @Override public List<SourceRecord> poll() {
       long start = System.nanoTime();
       try {
          waitForMessagesToPoll(start);
-         List<SourceRecord> records = messages.poll();
-         log.trace("Returning {} records in {}ms. {}", records.size(), msSince(start), state);
+         List<SourceRecord> records = messages.pollRecords();
+         logger.trace("Returning {} records in {}ms.", records.size(), msSince(start));
          return records.isEmpty() ? null : records;
       } catch (InterruptedException e) {
-         log.warn("Poll was interrupted");
+         logger.warn("Poll was interrupted.");
          Thread.currentThread().interrupt();
       }
       return null;
@@ -66,7 +79,7 @@ public class RunningStrategy extends BaseStrategy {
       receiveLock.lock();
       try {
          boolean received = recordsReceived.await(pollTimeoutMs, TimeUnit.MILLISECONDS);
-         log.trace("Received={}, in {}ms", received, msSince(start));
+         logger.trace("Received={}, in {}ms.", received, msSince(start));
       } finally {
          receiveLock.unlock();
       }
@@ -77,5 +90,9 @@ public class RunningStrategy extends BaseStrategy {
 
    @Override public void stop() {
       state.moveTo(new StoppingStrategy(state));
+   }
+
+   long getPollTimeoutMs() {
+      return pollTimeoutMs;
    }
 }

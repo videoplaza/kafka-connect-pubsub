@@ -74,7 +74,7 @@ public class SourceMessage {
 
       int numberOfRecords = count.get();
       if (numberOfRecords < 0) {
-         throw new IllegalStateException(format("NUmber of records is negative: %s", numberOfRecords));
+         throw new IllegalStateException(format("Number of records is negative: %s", numberOfRecords));
       }
 
       boolean allRecordsDelivered = numberOfRecords == 0;
@@ -82,9 +82,9 @@ public class SourceMessage {
          ackReplyConsumer.ack();
       }
 
-      //This can happen since records size is an approximation
-      if (allRecordsDelivered && records.size() > 0) {
-         LOG.info("No records left according to counter, but {} still are", records.size());
+      if (LOG.isDebugEnabled() && allRecordsDelivered && records.size() > 0) {
+         LOG.debug("No records left according to counter, but there are {} according to records.size(). " +
+            "This can happen since records size is an approximation.", records.size());
       }
 
       return allRecordsDelivered;

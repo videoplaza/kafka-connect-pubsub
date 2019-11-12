@@ -16,8 +16,6 @@ public class SourceRecordFactory {
       this.topic = requireNonNull(topic, "Topic is required");
    }
 
-   //TODO pass extra message attributes as headers
-   //TODO make key type/schema configurable
    public SourceRecord create(String messageId, String key, byte[] data, long timestamp) {
       return new SourceRecord(
           null,

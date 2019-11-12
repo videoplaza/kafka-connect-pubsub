@@ -32,7 +32,7 @@ public abstract class BaseStrategy implements PubsubSourceTaskStrategy {
       SourceMessage sourceMessage = messages.get(messageId);
       if (sourceMessage != null) {
          boolean allRecordsAcked = sourceMessage.ack(record);
-         state.getMetrics().onRecordAck(sourceMessage.getReceivedMs()); //TODO move to the task?
+         state.getMetrics().onRecordAck(sourceMessage.getReceivedMs());
          if (allRecordsAcked) {
             messages.remove(messageId);
             state.getMetrics().onMessageAck(sourceMessage.getReceivedMs());

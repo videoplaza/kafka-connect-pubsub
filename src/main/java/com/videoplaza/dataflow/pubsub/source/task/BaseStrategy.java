@@ -36,12 +36,11 @@ public abstract class BaseStrategy implements PubsubSourceTaskStrategy {
          if (allRecordsAcked) {
             messages.remove(messageId);
             state.getMetrics().onMessageAck(sourceMessage.getReceivedMs());
-            return sourceMessage;
          }
       } else {
          state.getMetrics().onRecordAckLost();
       }
-      return null;
+      return sourceMessage;
    }
 
    @Override public String toString() {

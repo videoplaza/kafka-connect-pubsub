@@ -120,17 +120,17 @@ public class PubsubSourceTaskLogger {
 
    public void log(String message, SourceMessage sourceMessage) {
       if (log.isDebugEnabled() && sourceMessage != null && sourceMessage.hasTraceableRecords()) {
-         log.debug(message + " [{}]", state);
+         log.debug(message + " [{}]", sourceMessage, state);
       } else if (log.isTraceEnabled()) {
-         log.trace(message + " [{}]", state);
+         log.trace(message + " [{}]", sourceMessage, state);
       }
    }
 
    public void log(String message, SourceMessage sourceMessage, PubsubMessage pubsubMessage) {
       if (log.isDebugEnabled() && sourceMessage != null && sourceMessage.hasTraceableRecords()) {
-         log.debug(message + " [{}]", attributeExtractor.debugInfo(pubsubMessage), state);
+         log.debug(message + " [{}]", sourceMessage, attributeExtractor.debugInfo(pubsubMessage), state);
       } else if (log.isTraceEnabled()) {
-         log.trace(message + " [{}]", attributeExtractor.debugInfo(pubsubMessage), state);
+         log.trace(message + " [{}]", sourceMessage, attributeExtractor.debugInfo(pubsubMessage), state);
       }
    }
 

@@ -7,6 +7,7 @@ import com.videoplaza.dataflow.pubsub.PubsubSourceConnectorConfig;
 import com.videoplaza.dataflow.pubsub.metrics.TaskMetricsImpl;
 import com.videoplaza.dataflow.pubsub.source.task.convert.PubsubMessageConverter;
 import com.videoplaza.dataflow.pubsub.util.PubsubSourceTaskLogger;
+import io.grpc.netty.shaded.io.netty.channel.EventLoopGroup;
 
 /**
  * A state shared by {@link PubsubSourceTaskStrategy} instances.
@@ -34,4 +35,5 @@ public interface PubsubSourceTaskState {
 
    JmxReporter getJmxReporter();
 
+   EventLoopGroup getPubsubEventLoopGroup();
 }

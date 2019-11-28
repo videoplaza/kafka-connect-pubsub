@@ -2,8 +2,10 @@ package com.videoplaza.dataflow.pubsub.source.task;
 
 import com.codahale.metrics.jmx.JmxReporter;
 import com.google.api.core.ApiService;
+import com.google.api.gax.grpc.InstantiatingGrpcChannelProvider;
 import com.google.cloud.pubsub.v1.AckReplyConsumer;
 import com.google.cloud.pubsub.v1.Subscriber;
+import com.google.cloud.pubsub.v1.stub.SubscriberStubSettings;
 import com.google.pubsub.v1.PubsubMessage;
 import com.videoplaza.dataflow.pubsub.PubsubSourceConnectorConfig;
 import com.videoplaza.dataflow.pubsub.Version;
@@ -16,6 +18,14 @@ import com.videoplaza.dataflow.pubsub.source.task.convert.PubsubMessageConverter
 import com.videoplaza.dataflow.pubsub.source.task.convert.SinglePubsubMessageConverter;
 import com.videoplaza.dataflow.pubsub.source.task.convert.SourceRecordFactory;
 import com.videoplaza.dataflow.pubsub.util.PubsubSourceTaskLogger;
+import io.grpc.netty.shaded.io.grpc.netty.NettyChannelBuilder;
+import io.grpc.netty.shaded.io.netty.channel.Channel;
+import io.grpc.netty.shaded.io.netty.channel.EventLoopGroup;
+import io.grpc.netty.shaded.io.netty.channel.epoll.Epoll;
+import io.grpc.netty.shaded.io.netty.channel.epoll.EpollEventLoopGroup;
+import io.grpc.netty.shaded.io.netty.channel.epoll.EpollSocketChannel;
+import io.grpc.netty.shaded.io.netty.channel.nio.NioEventLoopGroup;
+import io.grpc.netty.shaded.io.netty.channel.socket.nio.NioSocketChannel;
 import org.apache.kafka.connect.source.SourceRecord;
 import org.apache.kafka.connect.source.SourceTask;
 
@@ -45,6 +55,7 @@ public class PubsubSourceTask extends SourceTask implements PubsubSourceTaskStat
    private final String id = UUID.randomUUID().toString();
    private final AtomicReference<PubsubSourceTaskStrategy> strategy = new AtomicReference<>();
    private final ReentrantLock stopLock = new ReentrantLock();
+   private final Class<? extends Channel> pubsubChannelType = Epoll.isAvailable() ? EpollSocketChannel.class : NioSocketChannel.class;
 
    private volatile SourceMessageMap messages;
 
@@ -53,8 +64,8 @@ public class PubsubSourceTask extends SourceTask implements PubsubSourceTaskStat
    private volatile PubsubMessageConverter converter;
    private volatile JmxReporter reporter;
 
-   private volatile PubsubAttributeExtractor attributeExtractor;
    private volatile PubsubSourceTaskLogger logger;
+   private volatile EventLoopGroup pubsubEventLoopGroup;
 
    @Override public void start(Map<String, String> props) {
       configure(props);
@@ -68,13 +79,28 @@ public class PubsubSourceTask extends SourceTask implements PubsubSourceTaskStat
       return this;
    }
 
+   private EventLoopGroup newEventLoopGroup(int nThreads) {
+      return Epoll.isAvailable() ? new EpollEventLoopGroup(nThreads) : new NioEventLoopGroup(nThreads);
+   }
+
    private Subscriber newSubscriber() {
+      pubsubEventLoopGroup = newEventLoopGroup(config.getNettyEventLoopCount());
+      logger.info("Using netty channel type: {}", pubsubChannelType);
+      InstantiatingGrpcChannelProvider channelProvider = SubscriberStubSettings.defaultGrpcTransportProviderBuilder().setChannelConfigurator(input -> {
+         NettyChannelBuilder nettyChannelBuilder = (NettyChannelBuilder) input;
+         nettyChannelBuilder.eventLoopGroup(pubsubEventLoopGroup);
+         nettyChannelBuilder.channelType(pubsubChannelType);
+         return nettyChannelBuilder;
+      }).build();
+
       Subscriber newSubscriber = Subscriber.newBuilder(config.getProjectSubscription(), this::onPubsubMessageReceived)
-          .setFlowControlSettings(config.getFlowControlSettings())
-          .setMaxAckExtensionPeriod(config.getMaxAckExtensionPeriod())
-          .setParallelPullCount(config.getParallelPullCount())
-          .setEndpoint(config.getEndpoint())
-          .build();
+         .setFlowControlSettings(config.getFlowControlSettings())
+         .setMaxAckExtensionPeriod(config.getMaxAckExtensionPeriod())
+         .setParallelPullCount(config.getParallelPullCount())
+
+         .setChannelProvider(channelProvider)
+         .setEndpoint(config.getEndpoint())
+         .build();
 
       newSubscriber.addListener(new LoggingSubscriberListener(), Executors.newSingleThreadExecutor());
 
@@ -103,22 +129,21 @@ public class PubsubSourceTask extends SourceTask implements PubsubSourceTaskStat
 
    PubsubSourceTask configure(Map<String, String> props) {
       config = new PubsubSourceConnectorConfig(props);
-      attributeExtractor = config.getPubsubAttributeExtractor();
+      PubsubAttributeExtractor attributeExtractor = config.getPubsubAttributeExtractor();
       logger = new PubsubSourceTaskLogger(id, attributeExtractor, this, config.getDebugLogSparsity());
       boolean metricsSet = METRICS.compareAndSet(null, new TaskMetricsImpl(Clock.systemUTC(), config.getHistogramUpdateIntervalMs()));
       logger.info("Configure task. Metrics set: {}", metricsSet);
       SourceRecordFactory recordFactory = new SourceRecordFactory(config.getSubscription(), config.getTopic());
-      PubsubAttributeExtractor attributeExtractor = config.getPubsubAttributeExtractor();
       converter = new BatchTypePubsubMessageConverter(
-          new SinglePubsubMessageConverter(recordFactory, attributeExtractor, getMetrics(), logger),
-          new AvroBatchPubsubMessageConverter(recordFactory, attributeExtractor, getMetrics(), logger),
-          config.getBatchAttribute()
+         new SinglePubsubMessageConverter(recordFactory, attributeExtractor, getMetrics(), logger),
+         new AvroBatchPubsubMessageConverter(recordFactory, attributeExtractor, getMetrics(), logger),
+         config.getBatchAttribute()
       );
 
       reporter = JmxReporter.forRegistry(getMetrics().getMetricRegistry())
-          .inDomain("kafka.connect.pubsub")
-          .createsObjectNamesWith(this::metricName)
-          .build();
+         .inDomain("kafka.connect.pubsub")
+         .createsObjectNamesWith(this::metricName)
+         .build();
       return this;
    }
 
@@ -247,5 +272,7 @@ public class PubsubSourceTask extends SourceTask implements PubsubSourceTaskStat
       return METRICS.get();
    }
 
-
+   public EventLoopGroup getPubsubEventLoopGroup() {
+      return pubsubEventLoopGroup;
+   }
 }

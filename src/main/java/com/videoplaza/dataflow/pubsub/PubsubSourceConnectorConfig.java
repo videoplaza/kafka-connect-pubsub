@@ -105,6 +105,10 @@ public class PubsubSourceConnectorConfig extends AbstractConfig {
    private static final String HISTOGRAM_UPDATE_INTERVAL_MS_DOC = "Histogram data collection interval in milliseconds.";
    public static final Long HISTOGRAM_UPDATE_INTERVAL_MS_DEFAULT = 10_000L;
 
+   public static final String NETTY_EVENT_LOOP_COUNT_CONFIG = "netty.event.loop.count";
+   private static final String NETTY_EVENT_LOOP_COUNT_DOC = "Number of event loops in grpc worker event loop group.";
+   public static final int NETTY_EVENT_LOOP_COUNT_DEFAULT = 2;
+
    public static final ConfigDef CONFIG = configDef();
 
    public PubsubSourceConnectorConfig(Map<?, ?> originals) {
@@ -223,6 +227,12 @@ public class PubsubSourceConnectorConfig extends AbstractConfig {
           HISTOGRAM_UPDATE_INTERVAL_MS_DEFAULT,
           Importance.HIGH,
           HISTOGRAM_UPDATE_INTERVAL_MS_DOC
+      ).define(
+         NETTY_EVENT_LOOP_COUNT_CONFIG,
+         INT,
+         NETTY_EVENT_LOOP_COUNT_DEFAULT,
+         Importance.LOW,
+         NETTY_EVENT_LOOP_COUNT_DOC
       );
    }
 
@@ -292,6 +302,10 @@ public class PubsubSourceConnectorConfig extends AbstractConfig {
 
    public int getParallelPullCount() {
       return getInt(GCPS_PARALLEL_PULL_COUNT_CONFIG);
+   }
+
+   public int getNettyEventLoopCount() {
+      return getInt(NETTY_EVENT_LOOP_COUNT_CONFIG);
    }
 
    public boolean shouldNackMessagesDuringShutdown() {

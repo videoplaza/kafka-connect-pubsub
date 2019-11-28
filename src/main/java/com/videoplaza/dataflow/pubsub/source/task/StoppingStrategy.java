@@ -76,7 +76,7 @@ public class StoppingStrategy extends BaseStrategy {
          long start = System.nanoTime();
 
          waitForPolledMessagesToBeAcknowledged();
-         terrminateSubscriber();
+         terminateSubscriber();
 
          if (!state.isClean()) {
             logger.warn("Task is shutdown with unclean state in {}ms.", msSince(start));
@@ -92,16 +92,21 @@ public class StoppingStrategy extends BaseStrategy {
    /**
     * Attempts to nack messages, terminates subscriber and aits at most  {@link PubsubSourceConnectorConfig#SHUTDOWN_TERMINATE_SUBSCRIBER_TIMEOUT_MS_CONFIG}.
     */
-   private void terrminateSubscriber() {
+   private void terminateSubscriber() {
       logger.info("Nacking messages not delivered to kafka and stopping the subscriber.");
       nackReceivedMessages();
       long start = System.nanoTime();
       state.getSubscriber().stopAsync();
       try {
          state.getSubscriber().awaitTerminated(subscriberTerminationTimeoutMs, TimeUnit.MILLISECONDS);
+         state.getPubsubEventLoopGroup().shutdownGracefully();
+         state.getPubsubEventLoopGroup().terminationFuture().await(subscriberTerminationTimeoutMs, TimeUnit.MILLISECONDS);
          logger.info("Subscriber is terminated in {} ms.", msSince(start));
       } catch (TimeoutException e) {
          logger.info("Subscriber was not terminated in {} ms.", msSince(start));
+      } catch (InterruptedException e) {
+         Thread.currentThread().interrupt();
+         logger.info("Interrupted while waiting for event loop group to shutdown. {} ms.", msSince(start));
       }
    }
 

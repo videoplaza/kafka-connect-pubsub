@@ -45,7 +45,9 @@ public class PubsubSourceTaskTest {
            KAFKA_TOPIC_CONFIG, "topic"
        ))
        .configure(messages)
-       .subscribe(subscriber);
+       .configure(subscriber)
+       .configureEventLoopGroup(1)
+       .init();
 
 
    private final ExecutorService executor = Executors.newSingleThreadExecutor();

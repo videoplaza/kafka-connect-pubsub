@@ -75,14 +75,14 @@ public class RunningStrategyTest {
       assertThat(messages.contains(m)).isTrue();
    }
 
-   @Test(expected = GoingSouthException.class)
-   public void onNewMessageConversionFailed() {
+
+   @Test public void onNewMessageConversionFailed() {
       when(converter.convert(MESSAGE, ackReplyConsumer)).thenThrow(new GoingSouthException());
-      strategy.onNewMessageReceived(MESSAGE, ackReplyConsumer);
+      assertThat(strategy.onNewMessageReceived(MESSAGE, ackReplyConsumer)).isNull();
+      assertThat(metrics.getMessageConversionFailures()).isEqualTo(1);
    }
 
-   @Test(expected = GoingSouthException.class)
-   public void onNewMessageConversionFailedBeforeMaxFailuresReached() {
+   @Test public void onNewMessageConversionFailedBeforeMaxFailuresReached() {
       when(state.getConfig()).thenReturn(ignoreSingleFailureConfig);
       when(converter.convert(MESSAGE, ackReplyConsumer)).thenThrow(new GoingSouthButToBeIgnoredException());
       PubsubMessage secondMessage = PubsubMessage.newBuilder(MESSAGE).setMessageId("2").build();
@@ -92,7 +92,8 @@ public class RunningStrategyTest {
       assertThat(m).isNull();
       assertThat(metrics.getMessageConversionFailures()).isEqualTo(1);
 
-      strategy.onNewMessageReceived(secondMessage, ackReplyConsumer);
+      assertThat(strategy.onNewMessageReceived(secondMessage, ackReplyConsumer)).isNull();
+      assertThat(metrics.getMessageConversionFailures()).isEqualTo(2);
    }
 
    private static class GoingSouthException extends RuntimeException {

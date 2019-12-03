@@ -76,6 +76,8 @@ public class StoppingStrategy extends BaseStrategy {
          long start = System.nanoTime();
 
          waitForPolledMessagesToBeAcknowledged();
+         logger.info("Nacking messages not delivered to kafka and stopping the subscriber.");
+         nackReceivedMessages();
          terminateSubscriber();
 
          if (!state.isClean()) {
@@ -90,11 +92,9 @@ public class StoppingStrategy extends BaseStrategy {
    }
 
    /**
-    * Attempts to nack messages, terminates subscriber and aits at most  {@link PubsubSourceConnectorConfig#SHUTDOWN_TERMINATE_SUBSCRIBER_TIMEOUT_MS_CONFIG}.
+    * Terminates subscriber and aits at most  {@link PubsubSourceConnectorConfig#SHUTDOWN_TERMINATE_SUBSCRIBER_TIMEOUT_MS_CONFIG}.
     */
    private void terminateSubscriber() {
-      logger.info("Nacking messages not delivered to kafka and stopping the subscriber.");
-      nackReceivedMessages();
       long start = System.nanoTime();
       state.getSubscriber().stopAsync();
       try {

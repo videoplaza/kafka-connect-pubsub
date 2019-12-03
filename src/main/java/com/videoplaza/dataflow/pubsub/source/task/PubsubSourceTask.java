@@ -70,8 +70,15 @@ public class PubsubSourceTask extends SourceTask implements PubsubSourceTaskStat
    @Override public void start(Map<String, String> props) {
       configure(props);
       configure(new SourceMessageMap(config.getCacheExpirationDeadlineSeconds(), this::onEviction));
-      subscribe(newSubscriber());
+      configureEventLoopGroup(config.getNettyEventLoopCount());
+      configure(newSubscriber());
+      init();
       logger.info("Started.");
+   }
+
+   PubsubSourceTask init() {
+      moveTo(new RunningStrategy(this));
+      return this;
    }
 
    PubsubSourceTask configure(SourceMessageMap messages) {
@@ -79,13 +86,20 @@ public class PubsubSourceTask extends SourceTask implements PubsubSourceTaskStat
       return this;
    }
 
-   private EventLoopGroup newEventLoopGroup(int nThreads) {
+   PubsubSourceTask configureEventLoopGroup(int nThreads) {
+      this.pubsubEventLoopGroup = newEventLoopGroup(nThreads);
+      return this;
+   }
+
+   static EventLoopGroup newEventLoopGroup(int nThreads) {
       return Epoll.isAvailable() ? new EpollEventLoopGroup(nThreads) : new NioEventLoopGroup(nThreads);
    }
 
    private Subscriber newSubscriber() {
-      pubsubEventLoopGroup = newEventLoopGroup(config.getNettyEventLoopCount());
       logger.info("Using netty channel type: {}", pubsubChannelType);
+      if (pubsubEventLoopGroup == null) {
+         throw new IllegalStateException("Cannot create a subscriber without Netty event loop group. Configure event loop group first!");
+      }
       InstantiatingGrpcChannelProvider channelProvider = SubscriberStubSettings.defaultGrpcTransportProviderBuilder().setChannelConfigurator(input -> {
          NettyChannelBuilder nettyChannelBuilder = (NettyChannelBuilder) input;
          nettyChannelBuilder.eventLoopGroup(pubsubEventLoopGroup);
@@ -120,10 +134,8 @@ public class PubsubSourceTask extends SourceTask implements PubsubSourceTaskStat
       }
    }
 
-   PubsubSourceTask subscribe(Subscriber subscriber) {
+   PubsubSourceTask configure(Subscriber subscriber) {
       this.subscriber = subscriber;
-      moveTo(new RunningStrategy(this));
-      subscriber.startAsync();
       return this;
    }
 
@@ -133,7 +145,7 @@ public class PubsubSourceTask extends SourceTask implements PubsubSourceTaskStat
       logger = new PubsubSourceTaskLogger(id, attributeExtractor, this, config.getDebugLogSparsity());
       boolean metricsSet = METRICS.compareAndSet(null, new TaskMetricsImpl(Clock.systemUTC(), config.getHistogramUpdateIntervalMs()));
       logger.info("Configure task. Metrics set: {}", metricsSet);
-      SourceRecordFactory recordFactory = new SourceRecordFactory(config.getSubscription(), config.getTopic());
+      SourceRecordFactory recordFactory = new SourceRecordFactory(config.getSubscription(), config.getTopic(), config.getPayloadVerifier());
       converter = new BatchTypePubsubMessageConverter(
          new SinglePubsubMessageConverter(recordFactory, attributeExtractor, getMetrics(), logger),
          new AvroBatchPubsubMessageConverter(recordFactory, attributeExtractor, getMetrics(), logger),

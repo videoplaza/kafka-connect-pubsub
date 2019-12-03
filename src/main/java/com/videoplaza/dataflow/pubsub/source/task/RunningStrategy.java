@@ -24,6 +24,7 @@ public class RunningStrategy extends BaseStrategy {
    }
 
    @Override public void init() {
+      state.getSubscriber().startAsync();
       state.getJmxReporter().start();
    }
 
@@ -45,10 +46,9 @@ public class RunningStrategy extends BaseStrategy {
          state.getMetrics().onMessageConversionFailure();
          if (shouldAckAndIgnoreFailedConversion()) {
             ackReplyConsumer.ack();
-            logger.warn("Failed to convert a message. Acked and ignored. {}", pubsubMessage);
+            logger.warn("Failed to convert a message. Acked and ignored. "+ logger.traceInfo(pubsubMessage), e);
          } else {
-            logger.error("Failed to convert a message. {} ", pubsubMessage);
-            throw e;
+            logger.error("Failed to convert a message. " + logger.traceInfo(pubsubMessage), e);
          }
       }
       return null;

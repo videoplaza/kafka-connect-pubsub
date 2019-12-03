@@ -9,6 +9,8 @@ import org.apache.kafka.connect.source.SourceRecord;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.Base64;
+
 import static java.util.Objects.requireNonNull;
 
 public class PubsubSourceTaskLogger {
@@ -31,8 +33,12 @@ public class PubsubSourceTaskLogger {
       return messageKey != null && messageKey.hashCode() % debugLogSparsity == 0;
    }
 
-   String debugInfo(PubsubMessage message) {
+   public String debugInfo(PubsubMessage message) {
       return attributeExtractor.getKey(message.getAttributesMap()) + "/" + attributeExtractor.getTimestamp(message);
+   }
+
+   public String traceInfo(PubsubMessage message) {
+      return attributeExtractor.getKey(message.getAttributesMap()) + "/" + attributeExtractor.getTimestamp(message)+" data:[ "+ Base64.getEncoder().encodeToString(message.toByteArray()) +"]";
    }
 
    public String getTaskUUID() {
@@ -53,7 +59,7 @@ public class PubsubSourceTaskLogger {
 
    public void error(String message, Throwable e) {
       if (log.isErrorEnabled()) {
-         log.error(message + " [{}]", state, e);
+         log.error(message + " [" + state + "]", e);
       }
    }
 
@@ -79,6 +85,12 @@ public class PubsubSourceTaskLogger {
    public void warn(String message, PubsubMessage pubsubMessage) {
       if (log.isWarnEnabled()) {
          log.warn(message + " [{}]", debugInfo(pubsubMessage), state);
+      }
+   }
+
+   public void warn(String message, Throwable e) {
+      if (log.isWarnEnabled()) {
+         log.warn(message + " [{" + state + "}]", e);
       }
    }
 

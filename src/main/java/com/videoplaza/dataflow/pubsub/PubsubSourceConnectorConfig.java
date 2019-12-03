@@ -4,6 +4,7 @@ import com.google.api.gax.batching.FlowControlSettings;
 import com.google.api.gax.batching.FlowController;
 import com.google.cloud.pubsub.v1.stub.SubscriberStubSettings;
 import com.google.pubsub.v1.ProjectSubscriptionName;
+import com.videoplaza.dataflow.pubsub.source.task.convert.PayloadVerifier;
 import com.videoplaza.dataflow.pubsub.source.task.convert.PubsubAttributeExtractor;
 import org.apache.kafka.common.config.AbstractConfig;
 import org.apache.kafka.common.config.ConfigDef;
@@ -40,8 +41,8 @@ public class PubsubSourceConnectorConfig extends AbstractConfig {
    public static final String GCPS_BATCH_TYPE_ATTRIBUTE_DEFAULT = "batch.type";
    public static final String AVRO_BATCH_TYPE = "avro";
 
-   public static final String MAX_NUMBER_CONVERSION_FAILURES_CONFIG = "max.conversion.failures";
-   private static final String MAX_NUMBER_CONVERSION_FAILURES_DOC = "Maximum number of conversion failures to ignore. ";
+   public static final String MAX_NUMBER_CONVERSION_FAILURES_CONFIG = "max.conversion.failures.ack";
+   private static final String MAX_NUMBER_CONVERSION_FAILURES_DOC = "Maximum number of conversion failures to ack.";
    public static final long MAX_NUMBER_CONVERSION_FAILURES_DEFAULT = 0;
 
    /**
@@ -109,6 +110,10 @@ public class PubsubSourceConnectorConfig extends AbstractConfig {
    private static final String NETTY_EVENT_LOOP_COUNT_DOC = "Number of event loops in grpc worker event loop group.";
    public static final int NETTY_EVENT_LOOP_COUNT_DEFAULT = 2;
 
+   public static final String PAYLOAD_VERIFIER_CONFIG = "payload.verifier";
+   private static final String PAYLOAD_VERIFIER_DOC = "Class implementing PayloadVerifier interface to be invoked on every message to verify it is correct before pushing it to kafka topic";
+   private static final String PAYLOAD_VERIFIER_DEFAULT = null;
+
    public static final ConfigDef CONFIG = configDef();
 
    public PubsubSourceConnectorConfig(Map<?, ?> originals) {
@@ -117,122 +122,128 @@ public class PubsubSourceConnectorConfig extends AbstractConfig {
 
    private static ConfigDef configDef() {
       return new ConfigDef().define(
-          KAFKA_TOPIC_CONFIG,
-          STRING,
-          Importance.HIGH,
-          KAFKA_TOPIC_DOC
+         KAFKA_TOPIC_CONFIG,
+         STRING,
+         Importance.HIGH,
+         KAFKA_TOPIC_DOC
       ).define(
-          GCPS_PROJECT_CONFIG,
-          STRING,
-          Importance.HIGH,
-          GCPS_PROJECT_DOC
+         GCPS_PROJECT_CONFIG,
+         STRING,
+         Importance.HIGH,
+         GCPS_PROJECT_DOC
       ).define(
-          GCPS_SUBSCRIPTION_CONFIG,
-          STRING,
-          Importance.HIGH,
-          GCPS_SUBSCRIPTION_DOC
+         GCPS_SUBSCRIPTION_CONFIG,
+         STRING,
+         Importance.HIGH,
+         GCPS_SUBSCRIPTION_DOC
       ).define(
-          GCPS_KEY_ATTRIBUTE_CONFIG,
-          STRING,
-          GCPS_KEY_ATTRIBUTE_DEFAULT,
-          Importance.MEDIUM,
-          GCPS_KEY_ATTRIBUTE_DOC
+         GCPS_KEY_ATTRIBUTE_CONFIG,
+         STRING,
+         GCPS_KEY_ATTRIBUTE_DEFAULT,
+         Importance.MEDIUM,
+         GCPS_KEY_ATTRIBUTE_DOC
       ).define(
-          GCPS_TIMESTAMP_ATTRIBUTE_CONFIG,
-          STRING,
-          GCPS_TIMESTAMP_ATTRIBUTE_DEFAULT,
-          Importance.MEDIUM,
-          GCPS_TIMESTAMP_ATTRIBUTE_DOC
+         GCPS_TIMESTAMP_ATTRIBUTE_CONFIG,
+         STRING,
+         GCPS_TIMESTAMP_ATTRIBUTE_DEFAULT,
+         Importance.MEDIUM,
+         GCPS_TIMESTAMP_ATTRIBUTE_DOC
       ).define(
-          GCPS_MAX_OUTSTANDING_ELEMENTS_CONFIG,
-          LONG,
-          GCPS_MAX_OUTSTANDING_ELEMENTS_DEFAULT,
-          Importance.MEDIUM,
-          GCPS_MAX_OUTSTANDING_ELEMENTS_DOC
+         GCPS_MAX_OUTSTANDING_ELEMENTS_CONFIG,
+         LONG,
+         GCPS_MAX_OUTSTANDING_ELEMENTS_DEFAULT,
+         Importance.MEDIUM,
+         GCPS_MAX_OUTSTANDING_ELEMENTS_DOC
       ).define(
-          GCPS_MAX_OUTSTANDING_BYTES_CONFIG,
-          LONG,
-          GCPS_MAX_OUTSTANDING_BYTES_DEFAULT,
-          Importance.MEDIUM,
-          GCPS_MAX_OUTSTANDING_BYTES_DOC
+         GCPS_MAX_OUTSTANDING_BYTES_CONFIG,
+         LONG,
+         GCPS_MAX_OUTSTANDING_BYTES_DEFAULT,
+         Importance.MEDIUM,
+         GCPS_MAX_OUTSTANDING_BYTES_DOC
       ).define(
-          SHUTDOWN_TERMINATE_SUBSCRIBER_TIMEOUT_MS_CONFIG,
-          LONG,
-          SHUTDOWN_TERMINATE_SUBSCRIBER_TIMEOUT_MS_DEFAULT,
-          Importance.LOW,
-          SHUTDOWN_TERMINATE_SUBSCRIBER_TIMEOUT_MS_DOC
+         SHUTDOWN_TERMINATE_SUBSCRIBER_TIMEOUT_MS_CONFIG,
+         LONG,
+         SHUTDOWN_TERMINATE_SUBSCRIBER_TIMEOUT_MS_DEFAULT,
+         Importance.LOW,
+         SHUTDOWN_TERMINATE_SUBSCRIBER_TIMEOUT_MS_DOC
       ).define(
-          SHUTDOWN_INFLIGHT_ACK_TIMEOUT_MS_CONFIG,
-          LONG,
-          SHUTDOWN_INFLIGHT_ACK_TIMEOUT_MS_DEFAULT,
-          Importance.LOW,
-          SHUTDOWN_INFLIGHT_ACK_TIMEOUT_MS_DOC
+         SHUTDOWN_INFLIGHT_ACK_TIMEOUT_MS_CONFIG,
+         LONG,
+         SHUTDOWN_INFLIGHT_ACK_TIMEOUT_MS_DEFAULT,
+         Importance.LOW,
+         SHUTDOWN_INFLIGHT_ACK_TIMEOUT_MS_DOC
       ).define(
-          POLL_TIMEOUT_MS_CONFIG,
-          LONG,
-          POLL_TIMEOUT_MS_DEFAULT,
-          Importance.LOW,
-          POLL_TIMEOUT_MS_DOC
+         POLL_TIMEOUT_MS_CONFIG,
+         LONG,
+         POLL_TIMEOUT_MS_DEFAULT,
+         Importance.LOW,
+         POLL_TIMEOUT_MS_DOC
       ).define(
-          GCPS_MAX_ACK_EXTENSION_PERIOD_SEC_CONFIG,
-          LONG,
-          GCPS_MAX_ACK_EXTENSION_PERIOD_SEC_DEFAULT,
-          Importance.HIGH,
-          GCPS_MAX_ACK_EXTENSION_PERIOD_SEC_DOC
+         GCPS_MAX_ACK_EXTENSION_PERIOD_SEC_CONFIG,
+         LONG,
+         GCPS_MAX_ACK_EXTENSION_PERIOD_SEC_DEFAULT,
+         Importance.HIGH,
+         GCPS_MAX_ACK_EXTENSION_PERIOD_SEC_DOC
       ).define(
-          GCPS_PARALLEL_PULL_COUNT_CONFIG,
-          INT,
-          GCPS_PARALLEL_PULL_COUNT_DEFAULT,
-          Importance.LOW,
-          GCPS_PARALLEL_PULL_COUNT_DOC
+         GCPS_PARALLEL_PULL_COUNT_CONFIG,
+         INT,
+         GCPS_PARALLEL_PULL_COUNT_DEFAULT,
+         Importance.LOW,
+         GCPS_PARALLEL_PULL_COUNT_DOC
       ).define(
-          CACHE_EXPIRATION_DEADLINE_SEC_CONFIG,
-          LONG,
-          CACHE_EXPIRATION_DEADLINE_SEC_DEFAULT,
-          Importance.HIGH,
-          CACHE_EXPIRATION_DEADLINE_SEC_DOC
+         CACHE_EXPIRATION_DEADLINE_SEC_CONFIG,
+         LONG,
+         CACHE_EXPIRATION_DEADLINE_SEC_DEFAULT,
+         Importance.HIGH,
+         CACHE_EXPIRATION_DEADLINE_SEC_DOC
       ).define(
-          DEBUG_LOG_SPARSITY_CONFIG,
-          INT,
-          DEBUG_LOG_SPARSITY_DEFAULT,
-          Importance.LOW,
-          DEBUG_LOG_SPARSITY_DOC
+         DEBUG_LOG_SPARSITY_CONFIG,
+         INT,
+         DEBUG_LOG_SPARSITY_DEFAULT,
+         Importance.LOW,
+         DEBUG_LOG_SPARSITY_DOC
       ).define(
-          NACK_MESSAGES_DURING_SHUTDOWN_CONFIG,
-          BOOLEAN,
-          NACK_MESSAGES_DURING_SHUTDOWN_DEFAULT,
-          Importance.LOW,
-          NACK_MESSAGES_DURING_SHUTDOWN_DOC
+         NACK_MESSAGES_DURING_SHUTDOWN_CONFIG,
+         BOOLEAN,
+         NACK_MESSAGES_DURING_SHUTDOWN_DEFAULT,
+         Importance.LOW,
+         NACK_MESSAGES_DURING_SHUTDOWN_DOC
       ).define(
-          GCPS_ENDPOINT_CONFIG,
-          STRING,
-          GCPS_ENDPOINT_DEFAULT,
-          Importance.LOW,
-          GCPS_ENDPOINT_DOC
+         GCPS_ENDPOINT_CONFIG,
+         STRING,
+         GCPS_ENDPOINT_DEFAULT,
+         Importance.LOW,
+         GCPS_ENDPOINT_DOC
       ).define(
-          GCPS_BATCH_TYPE_ATTRIBUTE_CONFIG,
-          STRING,
-          GCPS_BATCH_TYPE_ATTRIBUTE_DEFAULT,
-          Importance.LOW,
-          GCPS_BATCH_TYPE_ATTRIBUTE_DOC
+         GCPS_BATCH_TYPE_ATTRIBUTE_CONFIG,
+         STRING,
+         GCPS_BATCH_TYPE_ATTRIBUTE_DEFAULT,
+         Importance.LOW,
+         GCPS_BATCH_TYPE_ATTRIBUTE_DOC
       ).define(
-          MAX_NUMBER_CONVERSION_FAILURES_CONFIG,
-          LONG,
-          MAX_NUMBER_CONVERSION_FAILURES_DEFAULT,
-          Importance.LOW,
-          MAX_NUMBER_CONVERSION_FAILURES_DOC
+         MAX_NUMBER_CONVERSION_FAILURES_CONFIG,
+         LONG,
+         MAX_NUMBER_CONVERSION_FAILURES_DEFAULT,
+         Importance.LOW,
+         MAX_NUMBER_CONVERSION_FAILURES_DOC
       ).define(
-          HISTOGRAM_UPDATE_INTERVAL_MS_CONFIG,
-          LONG,
-          HISTOGRAM_UPDATE_INTERVAL_MS_DEFAULT,
-          Importance.HIGH,
-          HISTOGRAM_UPDATE_INTERVAL_MS_DOC
+         HISTOGRAM_UPDATE_INTERVAL_MS_CONFIG,
+         LONG,
+         HISTOGRAM_UPDATE_INTERVAL_MS_DEFAULT,
+         Importance.HIGH,
+         HISTOGRAM_UPDATE_INTERVAL_MS_DOC
       ).define(
          NETTY_EVENT_LOOP_COUNT_CONFIG,
          INT,
          NETTY_EVENT_LOOP_COUNT_DEFAULT,
          Importance.LOW,
          NETTY_EVENT_LOOP_COUNT_DOC
+      ).define(
+         PAYLOAD_VERIFIER_CONFIG,
+         STRING,
+         PAYLOAD_VERIFIER_DEFAULT,
+         Importance.LOW,
+         PAYLOAD_VERIFIER_DOC
       );
    }
 
@@ -282,10 +293,10 @@ public class PubsubSourceConnectorConfig extends AbstractConfig {
 
    public FlowControlSettings getFlowControlSettings() {
       return FlowControlSettings.newBuilder()
-          .setMaxOutstandingElementCount(getMaxOutstandingElements())
-          .setMaxOutstandingRequestBytes(getMaxOutstandingBytes())
-          .setLimitExceededBehavior(FlowController.LimitExceededBehavior.Block)
-          .build();
+         .setMaxOutstandingElementCount(getMaxOutstandingElements())
+         .setMaxOutstandingRequestBytes(getMaxOutstandingBytes())
+         .setLimitExceededBehavior(FlowController.LimitExceededBehavior.Block)
+         .build();
    }
 
    public Duration getMaxAckExtensionPeriod() {
@@ -335,4 +346,17 @@ public class PubsubSourceConnectorConfig extends AbstractConfig {
    public long getMaxNumberOfConversionFailures() {
       return getLong(MAX_NUMBER_CONVERSION_FAILURES_CONFIG);
    }
+
+   public PayloadVerifier getPayloadVerifier() {
+      String payLoadVerifierClassName = getString(PAYLOAD_VERIFIER_CONFIG);
+      if (payLoadVerifierClassName == null) {
+         return null;
+      }
+      try {
+         return Class.forName(payLoadVerifierClassName).asSubclass(PayloadVerifier.class).newInstance().configure(originals());
+      } catch (Exception e) {
+         throw new RuntimeException("Unable to instantiate " + payLoadVerifierClassName, e);
+      }
+   }
+
 }

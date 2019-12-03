@@ -349,7 +349,7 @@ public class PubsubSourceConnectorConfig extends AbstractConfig {
 
    public PayloadVerifier getPayloadVerifier() {
       String payLoadVerifierClassName = getString(PAYLOAD_VERIFIER_CONFIG);
-      if (payLoadVerifierClassName == null) {
+      if (payLoadVerifierClassName == null || payLoadVerifierClassName.isEmpty()) {
          return null;
       }
       try {

@@ -12,26 +12,31 @@ public class StoppedStrategy extends BaseStrategy {
       super(state);
    }
 
-   @Override
-   public void onNewMessageReceived(PubsubMessage pubsubMessage, AckReplyConsumer ackReplyConsumer, String messageKey) {
-      log.error("Received a message after shutdown {}/{}. {}", pubsubMessage.getMessageId(), messageKey, state);
-      state.getSubscriber().stopAsync();
+   @Override public void init() {
+      state.getJmxReporter().stop();
    }
 
-   @Override public void onDuplicateReceived(PubsubMessage pubsubMessage, String messageKey, Message current) {
-      onNewMessageReceived(pubsubMessage, null, messageKey);
+   @Override
+   public SourceMessage onNewMessageReceived(PubsubMessage pubsubMessage, AckReplyConsumer ackReplyConsumer) {
+      logger.error("Received a message after shutdown: {}.", pubsubMessage);
+      state.getSubscriber().stopAsync();
+      return null;
+   }
+
+   @Override public void onDuplicateReceived(PubsubMessage pubsubMessage, SourceMessage current) {
+      onNewMessageReceived(pubsubMessage, null);
    }
 
    @Override public List<SourceRecord> poll() {
-      log.error("Polling already stopped task {}", state);
+      logger.error("Polling already stopped task.");
       return null;
    }
 
    @Override public void commit() {
-      log.error("Committing already stopped task {}", state);
+      logger.error("Committing already stopped task.");
    }
 
    @Override public void stop() {
-      log.error("Stopping already stopped task {}", state);
+      logger.error("Stopping already stopped task.");
    }
 }

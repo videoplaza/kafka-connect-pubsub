@@ -1,29 +1,28 @@
 package com.videoplaza.dataflow.pubsub.source.task;
 
 
+import com.codahale.metrics.jmx.JmxReporter;
 import com.google.cloud.pubsub.v1.Subscriber;
 import com.videoplaza.dataflow.pubsub.PubsubSourceConnectorConfig;
-import com.videoplaza.dataflow.pubsub.util.TaskMetrics;
-import org.slf4j.Logger;
-
-import java.util.concurrent.locks.ReentrantLock;
+import com.videoplaza.dataflow.pubsub.metrics.TaskMetricsImpl;
+import com.videoplaza.dataflow.pubsub.source.task.convert.PubsubMessageConverter;
+import com.videoplaza.dataflow.pubsub.util.PubsubSourceTaskLogger;
+import io.grpc.netty.shaded.io.netty.channel.EventLoopGroup;
 
 /**
  * A state shared by {@link PubsubSourceTaskStrategy} instances.
  */
 public interface PubsubSourceTaskState {
 
-   Logger getLogger();
+   PubsubSourceTaskLogger getLogger();
 
    Subscriber getSubscriber();
 
-   TaskMetrics getMetrics();
+   TaskMetricsImpl getMetrics();
 
    PubsubMessageConverter getConverter();
 
    PubsubSourceConnectorConfig getConfig();
-
-   boolean isDebugEnabled(String messageKey);
 
    void moveTo(PubsubSourceTaskStrategy strategy);
 
@@ -32,7 +31,9 @@ public interface PubsubSourceTaskState {
    /**
     * Collection of messages in flight.
     */
-   MessageMap getMessages();
+   SourceMessageMap getMessages();
 
-   ReentrantLock getShutdownLock();
+   JmxReporter getJmxReporter();
+
+   EventLoopGroup getPubsubEventLoopGroup();
 }

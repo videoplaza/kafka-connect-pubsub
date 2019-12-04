@@ -3,16 +3,18 @@ package com.videoplaza.dataflow.pubsub.source.task;
 import com.google.api.core.ApiService;
 import com.google.cloud.pubsub.v1.AckReplyConsumer;
 import com.google.cloud.pubsub.v1.Subscriber;
+import com.google.common.collect.ImmutableMap;
 import com.google.protobuf.ByteString;
 import com.google.protobuf.Timestamp;
 import com.google.pubsub.v1.PubsubMessage;
 import com.videoplaza.dataflow.pubsub.PubsubSourceConnectorConfig;
+import com.videoplaza.dataflow.pubsub.metrics.TaskMetricsImpl;
 import org.apache.kafka.connect.source.SourceRecord;
 import org.junit.Before;
 import org.junit.Test;
 
+import java.time.Clock;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -34,16 +36,18 @@ public class PubsubSourceTaskTest {
 
    private final Subscriber subscriber = mock(Subscriber.class);
 
-   private final MessageMap messages = new MessageMap(10000, null);
+   private final SourceMessageMap messages = new SourceMessageMap(10000, null);
 
    private final PubsubSourceTask pubsubSourceTask = new PubsubSourceTask()
-       .configure(Map.of(
+       .configure(ImmutableMap.of(
            GCPS_PROJECT_CONFIG, "project",
            GCPS_SUBSCRIPTION_CONFIG, "subscription",
            KAFKA_TOPIC_CONFIG, "topic"
        ))
        .configure(messages)
-       .subscribe(subscriber);
+       .configure(subscriber)
+       .configureEventLoopGroup(1)
+       .init();
 
 
    private final ExecutorService executor = Executors.newSingleThreadExecutor();
@@ -58,6 +62,7 @@ public class PubsubSourceTaskTest {
        .build();
 
    @Before public void setUp() {
+      PubsubSourceTask.METRICS.set(new TaskMetricsImpl(Clock.systemUTC(), PubsubSourceConnectorConfig.HISTOGRAM_UPDATE_INTERVAL_MS_DEFAULT));
       when(subscriber.state()).thenReturn(ApiService.State.TERMINATED);
       verify(subscriber).startAsync();
    }
@@ -89,9 +94,9 @@ public class PubsubSourceTaskTest {
       assertEquals(0, messages.getPolledCount());
       assertTrue(ackSupplier.acked);
       assertFalse(ackSupplier.nacked);
-      assertEquals(1, pubsubSourceTask.getMetrics().getAckCount());
-      assertEquals(0, pubsubSourceTask.getMetrics().getNackCount());
-      assertEquals(1, pubsubSourceTask.getMetrics().getReceivedCount());
+      assertEquals(1, pubsubSourceTask.getMetrics().getMessageAckCount());
+      assertEquals(0, pubsubSourceTask.getMetrics().getMessageNackCount());
+      assertEquals(1, pubsubSourceTask.getMetrics().getMessageReceivedCount());
 
       stopTask();
       verify(subscriber).stopAsync();
@@ -116,9 +121,9 @@ public class PubsubSourceTaskTest {
       assertEquals(0, messages.getPolledCount());
       assertTrue(ackSupplier.acked);
       assertFalse(ackSupplier.nacked);
-      assertEquals(1, pubsubSourceTask.getMetrics().getAckCount());
-      assertEquals(0, pubsubSourceTask.getMetrics().getNackCount());
-      assertEquals(1, pubsubSourceTask.getMetrics().getReceivedCount());
+      assertEquals(1, pubsubSourceTask.getMetrics().getMessageAckCount());
+      assertEquals(0, pubsubSourceTask.getMetrics().getMessageNackCount());
+      assertEquals(1, pubsubSourceTask.getMetrics().getMessageReceivedCount());
    }
 
    private void stopTask() {
@@ -148,16 +153,15 @@ public class PubsubSourceTaskTest {
 
       asyncCompletedLatch.await(6000, TimeUnit.MILLISECONDS);
 
-      //assertEquals(0, sleeper.sleptLatch.getCount());
       verify(subscriber).stopAsync();
 
       assertEquals(0, messages.getPolledCount());
       assertEquals(0, messages.getToBePolledCount());
       assertFalse(ackSupplier.acked);
       assertTrue(ackSupplier.nacked);
-      assertEquals(0, pubsubSourceTask.getMetrics().getAckCount());
-      assertEquals(1, pubsubSourceTask.getMetrics().getNackCount());
-      assertEquals(1, pubsubSourceTask.getMetrics().getReceivedCount());
+      assertEquals(0, pubsubSourceTask.getMetrics().getMessageAckCount());
+      assertEquals(1, pubsubSourceTask.getMetrics().getMessageNackCount());
+      assertEquals(1, pubsubSourceTask.getMetrics().getMessageReceivedCount());
    }
 
    private static class AckSupplier implements AckReplyConsumer {

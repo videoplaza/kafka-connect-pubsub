@@ -20,7 +20,7 @@ public class PubsubSourceConnector extends SourceConnector {
 
    @Override public void start(Map<String, String> props) {
       this.props = props;
-      LOG.info("Started with {}", props);
+      LOG.info("Started with {}.", props);
    }
 
    @Override public Class<? extends Task> taskClass() {

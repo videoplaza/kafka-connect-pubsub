@@ -20,64 +20,69 @@ public class RunningStrategy extends BaseStrategy {
 
    public RunningStrategy(PubsubSourceTaskState state) {
       super(state);
-      pollTimeoutMs = state.getConfig().gePollTimeoutMs();
+      pollTimeoutMs = state.getConfig().getPollTimeoutMs();
+   }
+
+   @Override public void init() {
+      state.getSubscriber().startAsync();
+      state.getJmxReporter().start();
    }
 
    @Override
-   public void onNewMessageReceived(PubsubMessage pubsubMessage, AckReplyConsumer ackReplyConsumer, String messageKey) {
-      if (isDebugEnabled(messageKey)) {
-         log.debug("Received {}/{}. {}", pubsubMessage.getMessageId(), messageKey, state);
-      }
+   public SourceMessage onNewMessageReceived(PubsubMessage pubsubMessage, AckReplyConsumer ackReplyConsumer) {
 
-      messages.put(new Message(pubsubMessage.getMessageId(), state.getConverter().convert(pubsubMessage), ackReplyConsumer, metrics));
-
-      metrics.onReceived();
-
-      receiveLock.lock();
       try {
-         recordsReceived.signalAll();
-      } finally {
-         receiveLock.unlock();
+         SourceMessage m = state.getConverter().convert(pubsubMessage, ackReplyConsumer);
+         messages.put(m);
+         state.getMetrics().onMessageReceived(m.getCreatedMs(), m.size());
+         receiveLock.lock();
+         try {
+            recordsReceived.signalAll();
+         } finally {
+            receiveLock.unlock();
+         }
+         return m;
+      } catch (RuntimeException e) {
+         state.getMetrics().onMessageConversionFailure();
+         if (shouldAckAndIgnoreFailedConversion()) {
+            ackReplyConsumer.ack();
+            logger.warn("Failed to convert a message. Acked and ignored. "+ logger.traceInfo(pubsubMessage), e);
+         } else {
+            logger.error("Failed to convert a message. " + logger.traceInfo(pubsubMessage), e);
+         }
       }
+      return null;
+   }
+
+   boolean shouldAckAndIgnoreFailedConversion() {
+      return state.getMetrics().getMessageConversionFailures() <= state.getConfig().getMaxNumberOfConversionFailures();
    }
 
    @Override public List<SourceRecord> poll() {
-      long timeWaited = waitForMessagesToPoll();
+      long start = System.nanoTime();
       try {
-         if (state.getShutdownLock().tryLock(pollTimeoutMs, TimeUnit.MILLISECONDS)) {
-            try {
-               List<SourceRecord> records = messages.poll();
-               log.trace("Returning {} records after waiting for {}ms. {}", records.size(), timeWaited, state);
-               return records.isEmpty() ? null : records;
-            } finally {
-               state.getShutdownLock().unlock();
-            }
-         } else {
-            log.info("Could not obtain lock in {}ms. Will try later.", pollTimeoutMs);
-            return null;
-         }
+         waitForMessagesToPoll(start);
+         List<SourceRecord> records = messages.pollRecords();
+         logger.trace("Returning {} records in {}ms.", records.size(), msSince(start));
+         return records.isEmpty() ? null : records;
       } catch (InterruptedException e) {
-         log.info("Poll was interrupted");
+         logger.warn("Poll was interrupted.");
          Thread.currentThread().interrupt();
-         return null;
       }
+      return null;
    }
 
    /**
     * Waits for new messages to minimize CPU consumption.
     */
-   private long waitForMessagesToPoll() {
-      long start = System.nanoTime();
+   private void waitForMessagesToPoll(long start) throws InterruptedException {
       receiveLock.lock();
       try {
          boolean received = recordsReceived.await(pollTimeoutMs, TimeUnit.MILLISECONDS);
-         log.trace("Received={}, in {}ms", received, msSince(start));
-      } catch (InterruptedException e) {
-         Thread.currentThread().interrupt();
+         logger.trace("Received={}, in {}ms.", received, msSince(start));
       } finally {
          receiveLock.unlock();
       }
-      return msSince(start);
    }
 
    @Override public void commit() {
@@ -85,5 +90,9 @@ public class RunningStrategy extends BaseStrategy {
 
    @Override public void stop() {
       state.moveTo(new StoppingStrategy(state));
+   }
+
+   long getPollTimeoutMs() {
+      return pollTimeoutMs;
    }
 }

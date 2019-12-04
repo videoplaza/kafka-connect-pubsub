@@ -21,7 +21,7 @@ public interface PubsubSourceTaskStrategy {
     *
     * @see PubsubSourceTask#onPubsubMessageReceived(PubsubMessage, AckReplyConsumer)
     */
-   void onNewMessageReceived(PubsubMessage pubsubMessage, AckReplyConsumer ackReplyConsumer, String messageKey);
+   SourceMessage onNewMessageReceived(PubsubMessage pubsubMessage, AckReplyConsumer ackReplyConsumer);
 
    /**
     * Callback for the case when a new <tt>pubsubMessage</tt> is received, but it is already present
@@ -29,7 +29,7 @@ public interface PubsubSourceTaskStrategy {
     *
     * @see PubsubSourceTask#onPubsubMessageReceived(PubsubMessage, AckReplyConsumer)
     */
-   void onDuplicateReceived(PubsubMessage pubsubMessage, String messageKey, Message current);
+   void onDuplicateReceived(PubsubMessage pubsubMessage, SourceMessage current);
 
    /**
     * Returns messages to Kafka connect framework for delivery to kafka
@@ -43,7 +43,7 @@ public interface PubsubSourceTaskStrategy {
     *
     * @see SourceTask#commitRecord(SourceRecord)
     */
-   void commitRecord(SourceRecord record);
+   SourceMessage commitRecord(SourceRecord record);
 
    /**
     * A hook into the shutdown process. Not much to do during for the source task.

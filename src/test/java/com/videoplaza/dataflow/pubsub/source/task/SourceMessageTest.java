@@ -30,7 +30,7 @@ public class SourceMessageTest {
        CLOCK.millis() - 1000,
        Collections.emptyMap(),
        ackReplyConsumer,
-       false
+       null
    );
 
    private final Map<Object, SourceRecord> records = records("k1", "k2");
@@ -39,7 +39,7 @@ public class SourceMessageTest {
        CLOCK.millis() - 2000,
        records,
        ackReplyConsumer,
-       false
+      null
    );
 
    private final SourceRecord aRecord = aRecord("1");

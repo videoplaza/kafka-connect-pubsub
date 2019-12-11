@@ -12,6 +12,8 @@ import org.apache.avro.specific.SpecificDatumReader;
 import org.apache.kafka.connect.source.SourceRecord;
 
 import java.io.IOException;
+import java.util.LinkedList;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -49,16 +51,16 @@ public class AvroBatchPubsubMessageConverter implements PubsubMessageConverter {
       String messageId = pubsubMessage.getMessageId();
       long createdMs = attributeExtractor.getTimestamp(pubsubMessage);
       try (DataFileReader<Record> reader = new DataFileReader<>(new SeekableByteArrayInput(pubsubMessage.getData().toByteArray()), datumReader)) {
-         final AtomicBoolean hasTraceableRecords = new AtomicBoolean();
+         List<String> traceableKeys = new LinkedList<>();
          Map<Object, SourceRecord> records = StreamSupport.stream(reader.spliterator(), false)
              .map((m) -> from(m, messageId, createdMs))
              .peek(r -> {
                 if (logger.isTraceable(r.key())) {
-                   hasTraceableRecords.set(true);
+                   traceableKeys.add(r.key().toString());
                 }
              }).collect(toMap(SourceRecord::key, identity()));
 
-         return new SourceMessage(messageId, createdMs, records, ackReplyConsumer, hasTraceableRecords.get());
+         return new SourceMessage(messageId, createdMs, records, ackReplyConsumer, traceableKeys);
       } catch (IOException e) {
          throw new RuntimeException("Fail to read the data for " + messageId, e);
       }

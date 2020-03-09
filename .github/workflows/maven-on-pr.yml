@@ -19,6 +19,11 @@ jobs:
         java-version: 1.8
         server-id: github
         settings-path: ${{ github.workspace }}
+    - name: boom
+      shell: bash
+      run: |
+        echo $GITHUB_WORKSPACE;
+        cat $GITHUB_WORKSPACE/settings.xml
     - name: Build with Maven
       run: mvn -B package --file pom.xml -Dkafka-connect-pubsub.version=${{ github.head_ref }}-${{ github.run_number }}
     - name: Publish to GitHub Packages Apache Maven

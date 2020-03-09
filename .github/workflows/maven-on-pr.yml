@@ -18,16 +18,12 @@ jobs:
       with:
         java-version: 1.8
         server-id: github
-        settings-path: ${{ github.workspace }}
-    - name: boom
-      shell: bash
-      run: |
-        echo $GITHUB_WORKSPACE;
-        cat $GITHUB_WORKSPACE/settings.xml
     - name: Build with Maven
-      run: mvn -B package --file pom.xml -Dkafka-connect-pubsub.version=${{ github.head_ref }}-${{ github.run_number }}
+      run: mvn -s settings.xml -B package --file pom.xml -Dkafka-connect-pubsub.version=${{ github.head_ref }}-${{ github.run_number }}
+      env:
+        AVRO_MESSAGE_BATCH_TOKEN: ${{ secret.AVRO_MESSAGE_BATCH_TOKEN }}
     - name: Publish to GitHub Packages Apache Maven
-      run: mvn deploy -s $GITHUB_WORKSPACE/settings.xml -Dkafka-connect-pubsub.version=${{ github.head_ref }}-${{ github.run_number }}
+      run: mvn deploy -s settings.xml -Dkafka-connect-pubsub.version=${{ github.head_ref }}-${{ github.run_number }}
       env:
         GITHUB_TOKEN: ${{ github.token }}
 

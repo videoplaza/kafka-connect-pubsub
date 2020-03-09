@@ -20,17 +20,18 @@ jobs:
       with:
         java-version: 1.8
         server-id: github
-        settings-path: ${{ github.workspace }}
     - name: Build with Maven
       shell: bash
       run: |
         export VP_LAST_TAG=`git describe --tags`;
-        mvn -B package --file pom.xml -Dkafka-connect-pubsub.version=$VP_LAST_TAG
+        mvn -s settings.xml -B package --file pom.xml -Dkafka-connect-pubsub.version=$VP_LAST_TAG
+      env:
+        AVRO_MESSAGE_BATCH_TOKEN: ${{ secrets.AVRO_MESSAGE_BATCH_TOKEN }}
     - name: Publish to GitHub Packages Apache Maven
       shell: bash
       run: |
         export VP_LAST_TAG=`git describe --tags`;
-        mvn deploy -s $GITHUB_WORKSPACE/settings.xml -Dkafka-connect-pubsub.version=$VP_LAST_TAG
+        mvn deploy -s settings.xml -Dkafka-connect-pubsub.version=$VP_LAST_TAG
       env:
         GITHUB_TOKEN: ${{ github.token }}
 

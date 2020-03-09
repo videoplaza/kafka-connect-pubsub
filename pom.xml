@@ -24,8 +24,8 @@
             <url>http://packages.confluent.io/maven/</url>
         </repository>
         <repository>
-            <id>videoplaza-github</id>
-            <url>https://maven.pkg.github.com/videoplaza</url>
+            <id>videoplaza/avro-message-batch</id>
+            <url>https://maven.pkg.github.com/videoplaza/avro-message-batch</url>
         </repository>
     </repositories>
 

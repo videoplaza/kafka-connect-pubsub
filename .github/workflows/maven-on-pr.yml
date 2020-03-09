@@ -22,7 +22,7 @@ jobs:
     - name: Build with Maven
       run: mvn -B package --file pom.xml
     - name: Publish to GitHub Packages Apache Maven
-      run: mvn deploy -s $GITHUB_WORKSPACE/settings.xml -Davro-message-batch.version=${{ github.head_ref }}-${{ github.run_number }}
+      run: mvn deploy -s $GITHUB_WORKSPACE/settings.xml -Dversion=${{ github.head_ref }}-${{ github.run_number }}
       env:
         GITHUB_TOKEN: ${{ github.token }}
 

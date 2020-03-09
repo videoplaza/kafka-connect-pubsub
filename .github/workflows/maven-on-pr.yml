@@ -21,7 +21,7 @@ jobs:
     - name: Build with Maven
       run: mvn -s settings.xml -B package --file pom.xml -Dkafka-connect-pubsub.version=${{ github.head_ref }}-${{ github.run_number }}
       env:
-        AVRO_MESSAGE_BATCH_TOKEN: ${{ secret.AVRO_MESSAGE_BATCH_TOKEN }}
+        AVRO_MESSAGE_BATCH_TOKEN: ${{ secrets.AVRO_MESSAGE_BATCH_TOKEN }}
     - name: Publish to GitHub Packages Apache Maven
       run: mvn deploy -s settings.xml -Dkafka-connect-pubsub.version=${{ github.head_ref }}-${{ github.run_number }}
       env:

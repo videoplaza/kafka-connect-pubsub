@@ -7,6 +7,7 @@ import com.videoplaza.dataflow.pubsub.source.task.SourceMessage;
 import com.videoplaza.dataflow.pubsub.util.PubsubSourceTaskLogger;
 import org.apache.kafka.connect.source.SourceRecord;
 
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -50,7 +51,12 @@ public class SinglePubsubMessageConverter implements PubsubMessageConverter {
           recordFactory.create(message.getMessageId(), key, message.getData().toByteArray(), createdMs)
       );
 
-      SourceMessage sm = new SourceMessage(message.getMessageId(), createdMs, records, ackReplyConsumer, logger.isTraceable(key));
+      SourceMessage sm = new SourceMessage(
+         message.getMessageId(),
+         createdMs, records,
+         ackReplyConsumer,
+         logger.isTraceable(key) ? Collections.singletonList(key) : null
+      );
       logger.log("Converted single message. {}/{}", sm, message);
       return sm;
    }

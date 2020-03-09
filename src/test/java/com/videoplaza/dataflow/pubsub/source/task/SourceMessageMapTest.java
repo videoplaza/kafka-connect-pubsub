@@ -30,14 +30,14 @@ public class SourceMessageMapTest {
        CLOCK.millis() - 1000,
        ImmutableMap.of("1", record),
        mock(AckReplyConsumer.class),
-       false
+       null
    );
    private final SourceMessage anotherSourceMessage = new SourceMessage(
        "2",
        CLOCK.millis() - 1000,
        ImmutableMap.of("1", mock(SourceRecord.class)),
        mock(AckReplyConsumer.class),
-       false
+       null
    );
 
    @Test public void pollEmpty() {

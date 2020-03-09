@@ -7,9 +7,11 @@ import org.slf4j.LoggerFactory;
 
 import java.time.Clock;
 import java.util.Collection;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import static java.lang.String.format;
@@ -28,11 +30,11 @@ public class SourceMessage {
    private final Map<Object, SourceRecord> records;
    private final AtomicInteger count = new AtomicInteger();
    private final long createdMs;
-   private final boolean hasTraceableRecords;
+   private final List<String> traceableKeys;
 
    private volatile boolean polled = false;
 
-   public SourceMessage(String messageId, long createdMs, Map<Object, SourceRecord> records, AckReplyConsumer ackReplyConsumer, boolean hasTraceableRecords) {
+   public SourceMessage(String messageId, long createdMs, Map<Object, SourceRecord> records, AckReplyConsumer ackReplyConsumer, List<String> traceableKeys) {
       requireNonNull(messageId, "messageId cannot be null");
       requireNonNull(records, "record cannot be null");
       requireNonNull(ackReplyConsumer, "ackReplyConsumer cannot be null");
@@ -41,7 +43,7 @@ public class SourceMessage {
       this.records = new ConcurrentHashMap<>(records);
       this.ackReplyConsumer = ackReplyConsumer;
       this.receivedMs = Clock.systemUTC().millis();
-      this.hasTraceableRecords = hasTraceableRecords;
+      this.traceableKeys = traceableKeys;
       count.set(records.size());
    }
 
@@ -95,15 +97,11 @@ public class SourceMessage {
    }
 
    @Override public String toString() {
-      return "SourceMessage[" + messageId + '/' + getMessageKeys() + '/' + polled + '|' + (currentTimeMillis() - receivedMs) + "ms]";
-   }
-
-   private String getMessageKeys() {
-      return records.keySet().toString();
+      return "SourceMessage[" + messageId + traceableKeys + '/' + polled + '|' + (currentTimeMillis() - receivedMs) + "ms]";
    }
 
    public boolean hasTraceableRecords() {
-      return hasTraceableRecords;
+      return traceableKeys !=null && !traceableKeys.isEmpty();
    }
 
    public int size() {

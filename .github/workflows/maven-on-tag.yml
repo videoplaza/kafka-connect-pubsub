@@ -34,4 +34,12 @@ jobs:
         mvn deploy -s settings.xml -Dkafka-connect-pubsub.version=$VP_LAST_TAG
       env:
         GITHUB_TOKEN: ${{ github.token }}
-
+    - name: Publish to private artifactory
+      shell: bash
+      run: |
+        export VP_LAST_TAG=`git describe --tags`;
+        mvn deploy -s settings.xml -Dkafka-connect-pubsub.version=$VP_LAST_TAG -DaltDeploymentRepository=artifactory::default::$ARTIFACTORY_RELEASES_URL
+      env:
+        ARTIFACTORY_USER: ${{ secrets.ARTIFACTORY_USER }}
+        ARTIFACTORY_PASSWORD: ${{ secrets.ARTIFACTORY_PASSWORD }}
+        ARTIFACTORY_RELEASES_URL: ${{ secrets.ARTIFACTORY_RELEASES_URL }}

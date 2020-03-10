@@ -26,7 +26,7 @@ jobs:
       run: mvn deploy -s settings.xml -Dkafka-connect-pubsub.version=${{ github.head_ref }}-${{ github.run_number }}
       env:
         GITHUB_TOKEN: ${{ github.token }}
-  - name: Publish to private artifactory
+    - name: Publish to private artifactory
       shell: bash
       run: mvn deploy -s settings.xml -Dkafka-connect-pubsub.version=${{ github.head_ref }}-${{ github.run_number }} -DaltDeploymentRepository=artifactory::default::$ARTIFACTORY_CANDIDATES_URL
       env:
